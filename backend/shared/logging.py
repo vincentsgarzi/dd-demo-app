@@ -4,12 +4,25 @@ import logging
 import os
 from datetime import datetime, timezone
 
+# Keys that belong to the LogRecord itself — everything else is treated as
+# a structured attribute and promoted to the top level of the JSON output.
+_BUILTIN_ATTRS = frozenset({
+    "name", "msg", "args", "created", "relativeCreated", "exc_info",
+    "exc_text", "stack_info", "lineno", "funcName", "pathname", "filename",
+    "module", "thread", "threadName", "process", "processName", "levelname",
+    "levelno", "message", "msecs", "taskName",
+})
+
 
 class JSONFormatter(logging.Formatter):
-    """Produces one valid JSON object per log line, compatible with Datadog log intake."""
+    """Produces one valid JSON object per log line, compatible with Datadog log intake.
+
+    Any extra kwargs passed via logger.info("msg", extra={...}) are promoted
+    to top-level keys in the JSON output, making them searchable as Datadog
+    log attributes.
+    """
 
     def format(self, record):
-        # Inject dd.trace_id / dd.span_id (set by ddtrace via DD_LOGS_INJECTION)
         trace_id = getattr(record, "dd.trace_id", "0")
         span_id = getattr(record, "dd.span_id", "0")
 
@@ -23,6 +36,11 @@ class JSONFormatter(logging.Formatter):
                 "span_id": str(span_id),
             },
         }
+
+        # Promote any extra keys to top-level attributes
+        for key, val in record.__dict__.items():
+            if key not in _BUILTIN_ATTRS and not key.startswith("_") and key not in ("dd.trace_id", "dd.span_id"):
+                log_entry[key] = val
 
         if record.exc_info and record.exc_info[0] is not None:
             log_entry["error"] = {

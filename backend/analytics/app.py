@@ -78,7 +78,9 @@ def _memory_leak_worker():
             "orders_processed": random.randint(1, 100),
         }
         _leaked_memory.append(chunk)
-        logger.info(f"Background worker processed batch, cache size: {len(_leaked_memory)}")
+        logger.info(f"Background worker processed batch, cache size: {len(_leaked_memory)}", extra={
+            "worker": {"cache_size": len(_leaked_memory), "chunk_bytes": 10_000},
+        })
         time.sleep(15)
 
 
@@ -95,7 +97,10 @@ def start_timer():
 def log_request(response):
     from flask import g
     duration_ms = (time.time() - g.start) * 1000
-    logger.info(f"{request.method} {request.path} {response.status_code} {duration_ms:.1f}ms")
+    logger.info(f"{request.method} {request.path} {response.status_code} {duration_ms:.1f}ms", extra={
+        "http": {"method": request.method, "url": request.path, "status_code": response.status_code},
+        "duration_ms": round(duration_ms, 1),
+    })
     emit("ddstore.request.count", tags=[
         f"method:{request.method}", f"path:{request.path}", f"status:{response.status_code}",
     ])
@@ -112,7 +117,9 @@ def handle_exception(e):
         span.set_tag("error.type", type(e).__name__)
         span.set_tag("error.stack", traceback.format_exc())
         span.error = 1
-    logger.error(f"Unhandled {type(e).__name__}: {e}")
+    logger.error(f"Unhandled {type(e).__name__}: {e}", extra={
+        "error_type": type(e).__name__, "error_message": str(e),
+    })
     return jsonify({"error": type(e).__name__, "message": str(e)}), 500
 
 

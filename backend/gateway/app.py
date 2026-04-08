@@ -63,7 +63,10 @@ def start_timer():
 def log_request(response):
     from flask import g
     duration_ms = (time.time() - g.start) * 1000
-    logger.info(f"GATEWAY {request.method} {request.path} → {response.status_code} {duration_ms:.1f}ms")
+    logger.info(f"GATEWAY {request.method} {request.path} → {response.status_code} {duration_ms:.1f}ms", extra={
+        "http": {"method": request.method, "url": request.path, "status_code": response.status_code},
+        "duration_ms": round(duration_ms, 1),
+    })
     emit("ddstore.gateway.request.count", tags=[
         f"method:{request.method}", f"path:{request.path}", f"status:{response.status_code}",
     ])
@@ -116,7 +119,9 @@ def _proxy(service_base, path):
             span.set_tag("error.type", "ConnectionError")
             span.set_tag("error.stack", traceback.format_exc())
             span.error = 1
-        logger.error(f"Downstream service unavailable: {url}")
+        logger.error(f"Downstream service unavailable: {url}", extra={
+            "downstream": {"url": url, "error": "ConnectionError"},
+        })
         return jsonify({"error": "Service unavailable", "target": url}), 503
     except http_client.exceptions.Timeout as e:
         span = tracer.current_span()
@@ -125,7 +130,9 @@ def _proxy(service_base, path):
             span.set_tag("error.type", "TimeoutError")
             span.set_tag("error.stack", traceback.format_exc())
             span.error = 1
-        logger.error(f"Downstream service timeout: {url}")
+        logger.error(f"Downstream service timeout: {url}", extra={
+            "downstream": {"url": url, "error": "Timeout"},
+        })
         return jsonify({"error": "Service timeout", "target": url}), 504
 
 
