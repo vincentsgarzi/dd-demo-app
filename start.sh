@@ -18,16 +18,16 @@ fi
 source .venv/bin/activate
 pip install -q -r requirements.txt
 
-# Seed DB
-echo "  Seeding database..."
-python3 seed.py
-
 # ── Common ddtrace env vars ──────────────────────────────────────────────────
 export DD_ENV=demo
 export DD_VERSION=1.0.0
 export DD_LOGS_INJECTION=true
 export DD_RUNTIME_METRICS_ENABLED=true
 export DD_PROFILING_ENABLED=true
+
+# Seed DB (DD_TRACE_ENABLED=false prevents seed from sending traces as wrong service)
+echo "  Seeding database..."
+DD_TRACE_ENABLED=false python3 seed.py
 
 # ── Start microservices ──────────────────────────────────────────────────────
 echo ""
