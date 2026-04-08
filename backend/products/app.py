@@ -8,6 +8,7 @@ import sys
 import time
 import random
 import logging
+import traceback
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -77,6 +78,19 @@ def log_request(response):
     ])
     emit("ddstore.request.duration", duration_ms, tags=[f"path:{request.path}"])
     return response
+
+
+# ── Error handler — ensures full stack trace on the root span ─────────────────
+@app.errorhandler(Exception)
+def handle_exception(e):
+    span = tracer.current_span()
+    if span:
+        span.set_tag("error.message", str(e))
+        span.set_tag("error.type", type(e).__name__)
+        span.set_tag("error.stack", traceback.format_exc())
+        span.error = 1
+    logger.error(f"Unhandled {type(e).__name__}: {e}")
+    return jsonify({"error": type(e).__name__, "message": str(e)}), 500
 
 
 # ─────────────────────────────────────────────────────────────────────────────

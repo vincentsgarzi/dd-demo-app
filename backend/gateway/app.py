@@ -6,6 +6,7 @@ Creates a gateway node in the Datadog Service Map with distributed traces.
 import os
 import time
 import logging
+import traceback
 
 import requests as http_client
 from flask import Flask, jsonify, request
@@ -13,7 +14,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 
 # ── Datadog APM — must be first ──────────────────────────────────────────────
-from ddtrace import patch_all
+from ddtrace import tracer, patch_all
 
 patch_all()
 
@@ -93,11 +94,38 @@ def _proxy(service_base, path):
             headers=_forward_headers(),
             timeout=60,
         )
+
+        # Tag the gateway span with downstream errors so APM shows full context
+        if resp.status_code >= 500:
+            span = tracer.current_span()
+            if span:
+                span.set_tag("error.message", f"Downstream {resp.status_code}: {url}")
+                try:
+                    body = resp.json()
+                    if "error" in body:
+                        span.set_tag("error.message", f"{body['error']}: {url}")
+                except Exception:
+                    pass
+                span.set_tag("error.type", "DownstreamError")
+                span.error = 1
+
         return (resp.content, resp.status_code, {"Content-Type": resp.headers.get("Content-Type", "application/json")})
-    except http_client.exceptions.ConnectionError:
+    except http_client.exceptions.ConnectionError as e:
+        span = tracer.current_span()
+        if span:
+            span.set_tag("error.message", f"Service unavailable: {url}")
+            span.set_tag("error.type", "ConnectionError")
+            span.set_tag("error.stack", traceback.format_exc())
+            span.error = 1
         logger.error(f"Downstream service unavailable: {url}")
         return jsonify({"error": "Service unavailable", "target": url}), 503
-    except http_client.exceptions.Timeout:
+    except http_client.exceptions.Timeout as e:
+        span = tracer.current_span()
+        if span:
+            span.set_tag("error.message", f"Service timeout: {url}")
+            span.set_tag("error.type", "TimeoutError")
+            span.set_tag("error.stack", traceback.format_exc())
+            span.error = 1
         logger.error(f"Downstream service timeout: {url}")
         return jsonify({"error": "Service timeout", "target": url}), 504
 
