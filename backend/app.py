@@ -24,10 +24,10 @@ load_dotenv()
 
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-    "DATABASE_URL",
-    "postgresql://ddstore_app:DB_PASSWORD_PLACEHOLDER@localhost:5432/ddstore"
-)
+_db_url = os.getenv("DATABASE_URL")
+if not _db_url:
+    raise RuntimeError("DATABASE_URL environment variable is not set. Copy backend/.env.example to backend/.env and fill in your values.")
+app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ECHO"] = False
 

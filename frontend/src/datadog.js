@@ -4,12 +4,12 @@ import { reactPlugin } from '@datadog/browser-rum-react';
 
 export function initDatadog() {
   datadogRum.init({
-    applicationId: 'VITE_DD_APP_ID_PLACEHOLDER',
-    clientToken: 'VITE_DD_CLIENT_TOKEN_PLACEHOLDER',
-    site: 'datadoghq.com',
-    service: 'ddstore-frontend',
-    env: 'demo',
-    version: '1.0.0',
+    applicationId: import.meta.env.VITE_DD_APP_ID,
+    clientToken: import.meta.env.VITE_DD_CLIENT_TOKEN,
+    site: import.meta.env.VITE_DD_SITE || 'datadoghq.com',
+    service: import.meta.env.VITE_DD_SERVICE || 'ddstore-frontend',
+    env: import.meta.env.VITE_DD_ENV || 'demo',
+    version: import.meta.env.VITE_DD_VERSION || '1.0.0',
     sessionSampleRate: 100,
     sessionReplaySampleRate: 100,
     trackResources: true,
@@ -19,11 +19,11 @@ export function initDatadog() {
   });
 
   datadogLogs.init({
-    clientToken: 'VITE_DD_CLIENT_TOKEN_PLACEHOLDER',
-    site: 'datadoghq.com',
-    service: 'ddstore-frontend',
-    env: 'demo',
-    version: '1.0.0',
+    clientToken: import.meta.env.VITE_DD_CLIENT_TOKEN,
+    site: import.meta.env.VITE_DD_SITE || 'datadoghq.com',
+    service: import.meta.env.VITE_DD_SERVICE || 'ddstore-frontend',
+    env: import.meta.env.VITE_DD_ENV || 'demo',
+    version: import.meta.env.VITE_DD_VERSION || '1.0.0',
     forwardErrorsToLogs: true,
     sessionSampleRate: 100,
   });

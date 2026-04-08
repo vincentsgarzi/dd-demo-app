@@ -10,8 +10,10 @@ backend/instance/
 frontend/node_modules/
 frontend/dist/
 
-# Env - keep .env.example but not real .env
+# Env — real values never committed, only .env.example files
 backend/.env
+frontend/.env
+frontend/.env.local
 
 # DB
 *.db
