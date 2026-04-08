@@ -29,6 +29,11 @@ export function initDatadog() {
   });
 
   datadogRum.startSessionReplayRecording();
+
+  // Pick up user context injected by Playwright RUM loadgen
+  if (window.__DD_USER__) {
+    datadogRum.setUser(window.__DD_USER__);
+  }
 }
 
 export const logger = {

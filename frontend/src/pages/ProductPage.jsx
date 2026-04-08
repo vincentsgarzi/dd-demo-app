@@ -69,6 +69,29 @@ export default function ProductPage() {
     </div>
   );
 
+  // BUG: Accessing nested property on undefined for certain products
+  // Products with id divisible by 5 have a "premium" flag but no nested data
+  // This throws a TypeError that RUM Error Tracking will capture
+  if (product.id % 5 === 0) {
+    try {
+      const tier = product.premium_details.tier.toUpperCase();
+      console.log('Premium tier:', tier);
+    } catch (e) {
+      // Intentionally re-throw to simulate an unhandled error in production
+      // RUM will capture this as a JS error
+      throw new Error(`Cannot read properties of undefined (reading 'tier') - product_id=${product.id}`);
+    }
+  }
+
+  // BUG: Memory-heavy operation on product page causes long tasks
+  // Simulates a poorly-optimized analytics tracker
+  if (product.id % 7 === 0) {
+    const start = performance.now();
+    while (performance.now() - start < 120) {} // 120ms blocking → Long Task
+    window.__leakedProductViews = window.__leakedProductViews || [];
+    window.__leakedProductViews.push({ id: product.id, ts: Date.now(), data: new Array(10000).fill('x') });
+  }
+
   return (
     <div>
       <button onClick={() => navigate(-1)} className="text-sm text-gray-500 hover:text-purple-600 mb-6 flex items-center gap-1">
