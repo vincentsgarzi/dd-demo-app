@@ -1,0 +1,33 @@
+# Copy this to /opt/datadog-agent/etc/conf.d/postgres.d/conf.yaml
+# (macOS) or /etc/datadog-agent/conf.d/postgres.d/conf.yaml (Linux)
+#
+# The 'datadog' user needs to be created in Postgres with pg_monitor role.
+# See: https://docs.datadoghq.com/database_monitoring/setup_postgres/
+
+init_config:
+
+instances:
+  - host: localhost
+    port: 5432
+    username: datadog
+    password: <YOUR_DATADOG_MONITORING_USER_PASSWORD>
+    dbname: ddstore
+
+    # Enable Database Monitoring
+    dbm: true
+
+    collect_bloat_metrics: true
+
+    query_samples:
+      enabled: true
+
+    query_metrics:
+      enabled: true
+
+    query_activity:
+      enabled: true
+
+    tags:
+      - env:demo
+      - service:ddstore-api
+      - db:postgres
