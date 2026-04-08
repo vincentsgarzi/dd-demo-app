@@ -24,6 +24,7 @@ export DD_VERSION=1.0.0
 export DD_LOGS_INJECTION=true
 export DD_RUNTIME_METRICS_ENABLED=true
 export DD_PROFILING_ENABLED=true
+export DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED=true
 
 # Seed DB (DD_TRACE_ENABLED=false prevents seed from sending traces as wrong service)
 echo "  Seeding database..."
