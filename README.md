@@ -266,6 +266,12 @@ curl http://localhost:8080/api/health
 # Should show: {"status":"ok","services":{"ddstore-products":"ok","ddstore-orders":"ok","ddstore-analytics":"ok","gateway":"ok"}}
 ```
 
+To stop everything:
+
+```bash
+./stop.sh
+```
+
 Data will start appearing in your Datadog sandbox within 1–2 minutes.
 
 ---
@@ -300,6 +306,7 @@ dd-demo-app/
 ├── datadog-agent-configs/
 │   └── postgres.yaml.example  # DBM config template
 ├── start.sh                # Starts all 4 microservices + frontend + loadgen
+├── stop.sh                 # Stops all running services
 └── README.md
 ```
 
