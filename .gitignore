@@ -21,3 +21,4 @@ frontend/.env.local
 
 # Logs
 *.log
+__pycache__/
