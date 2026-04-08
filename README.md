@@ -49,56 +49,41 @@ A full-stack e-commerce app that sells Datadog products. Built specifically to d
 
 ## Setup
 
-### Prerequisites
-- Python 3.10+
-- Node.js 18+
-- PostgreSQL 16 (running locally)
-- Datadog Agent running on `localhost:8126` / `localhost:8125`
+### Before you start — grab two things manually
 
-### 1. Clone
-```bash
-git clone git@github.com:vincentsgarzi/dd-demo-app.git
-cd dd-demo-app
+These require logging into Datadog and cannot be automated:
+
+1. **RUM Application ID + Client Token**
+   - Go to **Datadog > Digital Experience > RUM > New Application**
+   - Select React, name it `ddstore`, click Create
+   - Copy the `applicationId` and `clientToken` from the snippet shown
+
+2. **A Datadog Agent** must be running on your machine (port `8126` / `8125`)
+   - If you don't have one: https://docs.datadoghq.com/agent/
+
+That's it. Everything else is handled by Claude.
+
+---
+
+### Spin up with Claude
+
+Clone the repo, open it in Claude Code, and paste this prompt:
+
+```
+I just cloned the dd-demo-app repo. Please set it up end-to-end on my machine:
+
+1. Install PostgreSQL via Homebrew if not already installed, start it, and create
+   the ddstore database and ddstore_app user with pg_stat_statements enabled
+2. Create backend/.env from backend/.env.example — fill in the DATABASE_URL
+3. Create frontend/.env from frontend/.env.example — I'll give you my RUM credentials:
+     VITE_DD_APP_ID=<paste your App ID here>
+     VITE_DD_CLIENT_TOKEN=<paste your Client Token here>
+4. Set up the Python virtualenv, install dependencies, and seed the database
+5. Start the app (./start.sh) and confirm both services are healthy
+6. Start the load generator in the background so Datadog has data immediately
 ```
 
-### 2. Configure environment variables
-
-**Backend:**
-```bash
-cp backend/.env.example backend/.env
-# Edit backend/.env — fill in DATABASE_URL
-```
-
-**Frontend:**
-```bash
-cp frontend/.env.example frontend/.env
-# Edit frontend/.env — fill in your RUM App ID and Client Token
-# from Datadog > UX Monitoring > RUM Applications
-```
-
-### 3. Set up the database
-```bash
-export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
-psql postgres -c "CREATE DATABASE ddstore;"
-psql postgres -c "CREATE USER ddstore_app WITH PASSWORD 'your-password';"
-psql postgres -c "GRANT ALL PRIVILEGES ON DATABASE ddstore TO ddstore_app;"
-psql ddstore -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
-```
-
-### 4. Run everything
-```bash
-./start.sh
-```
-
-- Frontend: http://localhost:5173
-- Backend: http://localhost:8080/api/health
-
-### 5. Generate traffic
-```bash
-python3 loadgen/loadgen.py
-```
-
-The load generator simulates browsing, searching, adding to cart, and checking out — hitting all the buggy endpoints on a loop so Datadog has data to show immediately.
+Claude will handle every step, ask if anything is unclear, and confirm when the app is live.
 
 ---
 
@@ -111,18 +96,18 @@ dd-demo-app/
 │   ├── models.py       # SQLAlchemy models
 │   ├── seed.py         # Database seeder
 │   ├── requirements.txt
-│   ├── .env.example    # ← copy to .env and fill in
-│   └── .env            # ← not committed
+│   ├── .env.example    # ← template, never committed
+│   └── .env            # ← your local values, gitignored
 ├── frontend/
 │   ├── src/
-│   │   ├── datadog.js  # RUM + Logs init
+│   │   ├── datadog.js  # RUM + Logs init (reads from .env)
 │   │   ├── App.jsx
 │   │   ├── pages/
 │   │   └── components/
-│   ├── .env.example    # ← copy to .env and fill in
-│   └── .env            # ← not committed
+│   ├── .env.example    # ← template, never committed
+│   └── .env            # ← your local values, gitignored
 ├── loadgen/
-│   └── loadgen.py      # Traffic generator
+│   └── loadgen.py      # Traffic generator — run this to populate Datadog
 ├── start.sh            # Starts backend + frontend together
 └── README.md
 ```
