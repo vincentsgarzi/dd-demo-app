@@ -4,6 +4,23 @@ A full-stack e-commerce app that sells Datadog products. Built specifically to d
 
 ---
 
+## Why This Exists
+
+The dedicated Datadog demo org is great for standard demos, but it's a shared environment — you can't customize it, break things intentionally, or tailor the data story to a specific prospect.
+
+This app exists to change that.
+
+Every SE has a **sandbox account** with full admin access. This repo lets you spin up a complete, realistic demo environment inside your own sandbox — fully instrumented, fully under your control. You can:
+
+- **Customize the data** — seed products, users, and orders that match your prospect's industry
+- **Tune the bugs** — enable or disable specific issues depending on which Datadog features you're demoing
+- **Own the narrative** — because it's your sandbox, you control what the dashboards show and when
+- **Experiment freely** — break things, fix things, try new configurations without affecting anyone else
+
+The goal is a demo that feels like *their* environment, not a generic sandbox.
+
+---
+
 ## What's Inside
 
 | Layer | Tech |
