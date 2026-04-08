@@ -22,7 +22,13 @@ patch_all()
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
+CORS(
+    app,
+    origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_headers=["Content-Type", "X-Session-Id", "x-datadog-trace-id", "x-datadog-parent-id",
+                    "x-datadog-origin", "x-datadog-sampling-priority", "traceparent", "tracestate"],
+    expose_headers=["x-datadog-trace-id", "x-datadog-parent-id", "traceparent", "tracestate"],
+)
 
 # ── Service URLs ──────────────────────────────────────────────────────────────
 PRODUCT_SVC = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8081")

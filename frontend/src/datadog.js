@@ -17,6 +17,11 @@ export function initDatadog() {
     trackLongTasks: true,
     defaultPrivacyLevel: 'allow',
     plugins: [reactPlugin({ router: false })],
+    // ── RUM ↔ APM correlation ─────────────────────────────────────────────
+    allowedTracingUrls: [
+      { match: /http:\/\/localhost/, propagatorTypes: ['tracecontext', 'datadog'] },
+    ],
+    traceSampleRate: 100,
   });
 
   datadogLogs.init({
