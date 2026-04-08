@@ -1,11 +1,11 @@
 #!/bin/bash
-# Datadog Marketplace — start all services
+# Datadog Marketplace — start all microservices
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "🐶 Starting Datadog Marketplace..."
+echo "🐶 Starting Datadog Marketplace (microservices)..."
 
-# ── Backend ──────────────────────────────────────────────────────────────────
+# ── Backend setup ─────────────────────────────────────────────────────────────
 echo ""
 echo "📦 Setting up Python backend..."
 cd "$DIR/backend"
@@ -18,21 +18,39 @@ fi
 source .venv/bin/activate
 pip install -q -r requirements.txt
 
-# Seed DB on first run
+# Seed DB
 echo "  Seeding database..."
 python3 seed.py
 
-# Start backend with ddtrace
-echo "  Starting Flask API on :8080"
-DD_SERVICE=ddstore-api \
-DD_ENV=demo \
-DD_VERSION=1.0.0 \
-DD_LOGS_INJECTION=true \
-DD_RUNTIME_METRICS_ENABLED=true \
-DD_PROFILING_ENABLED=true \
-ddtrace-run python3 app.py &
-BACKEND_PID=$!
-echo "  Backend PID: $BACKEND_PID"
+# ── Common ddtrace env vars ──────────────────────────────────────────────────
+export DD_ENV=demo
+export DD_VERSION=1.0.0
+export DD_LOGS_INJECTION=true
+export DD_RUNTIME_METRICS_ENABLED=true
+export DD_PROFILING_ENABLED=true
+
+# ── Start microservices ──────────────────────────────────────────────────────
+echo ""
+echo "🚀 Starting microservices..."
+
+echo "  → Product Service on :8081"
+DD_SERVICE=ddstore-products ddtrace-run python3 products/app.py &
+PRODUCTS_PID=$!
+
+echo "  → Order Service on :8082"
+DD_SERVICE=ddstore-orders ddtrace-run python3 orders/app.py &
+ORDERS_PID=$!
+
+echo "  → Analytics Service on :8083"
+DD_SERVICE=ddstore-analytics ddtrace-run python3 analytics/app.py &
+ANALYTICS_PID=$!
+
+# Give downstream services a moment to start before the gateway
+sleep 2
+
+echo "  → API Gateway on :8080"
+DD_SERVICE=ddstore-gateway ddtrace-run python3 gateway/app.py &
+GATEWAY_PID=$!
 
 # ── Frontend ─────────────────────────────────────────────────────────────────
 echo ""
@@ -41,17 +59,21 @@ cd "$DIR/frontend"
 npm install -q
 npm run dev &
 FRONTEND_PID=$!
-echo "  Frontend PID: $FRONTEND_PID"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
 echo "✅ Datadog Marketplace is running!"
 echo ""
-echo "   Frontend:  http://localhost:5173"
-echo "   Backend:   http://localhost:8080/api/health"
-echo "   Load gen:  python3 loadgen/loadgen.py"
+echo "   Frontend:   http://localhost:5173"
+echo "   Gateway:    http://localhost:8080/api/health"
+echo "   Products:   http://localhost:8081/api/health"
+echo "   Orders:     http://localhost:8082/api/health"
+echo "   Analytics:  http://localhost:8083/api/health"
+echo "   Load gen:   python3 loadgen/loadgen.py"
+echo ""
+echo "   Service Map: gateway → {products, orders, analytics} → postgres"
 echo ""
 echo "Press Ctrl+C to stop all services."
 
-trap "echo ''; echo 'Stopping...'; kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit" INT TERM
+trap "echo ''; echo 'Stopping all services...'; kill $GATEWAY_PID $PRODUCTS_PID $ORDERS_PID $ANALYTICS_PID $FRONTEND_PID 2>/dev/null; exit" INT TERM
 wait

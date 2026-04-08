@@ -21,14 +21,57 @@ The goal is a demo that feels like *their* environment, not a generic sandbox.
 
 ---
 
+## Architecture
+
+```
+┌─────────────────┐
+│  React Frontend  │  (Vite :5173)
+│  DD RUM + Replay │
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│  API Gateway     │  ddstore-gateway (:8080)
+└──┬─────┬─────┬──┘
+   │     │     │
+   ▼     ▼     ▼
+┌──────┐ ┌──────┐ ┌──────────┐
+│Prod- │ │Order │ │Analytics │
+│ucts  │ │Svc   │ │Service   │
+│:8081 │ │:8082 │ │:8083     │
+└──┬───┘ └──┬───┘ └────┬─────┘
+   │     ▲  │          │
+   │     │  │          │
+   │     └──┼──────────┘  (orders→products, analytics→orders+products)
+   │        │
+   ▼        ▼
+┌─────────────────┐
+│  PostgreSQL 16   │  (DBM enabled)
+└─────────────────┘
+```
+
+The backend is split into **4 microservices** — each with its own `DD_SERVICE` tag, creating a rich service map with distributed traces that cross service boundaries.
+
+| Service | Port | DD_SERVICE | Responsibility |
+|---------|------|------------|----------------|
+| **API Gateway** | 8080 | `ddstore-gateway` | Routes all requests to downstream services |
+| **Product Service** | 8081 | `ddstore-products` | Products, categories, search, recommendations |
+| **Order Service** | 8082 | `ddstore-orders` | Cart, checkout, order history |
+| **Analytics Service** | 8083 | `ddstore-analytics` | Stats dashboard, compute, memory leak worker |
+
+**Cross-service calls** (visible as multi-service flamegraphs in APM):
+- Checkout: `orders → products` (validates each cart item)
+- Stats: `analytics → orders + products` (aggregates data across services)
+
+---
+
 ## What's Inside
 
 | Layer | Tech |
 |---|---|
 | Frontend | React + Vite + Tailwind CSS |
-| Backend | Python Flask + SQLAlchemy |
-| Database | PostgreSQL |
-| APM | ddtrace (auto-instrumented) |
+| Backend | 4 Python Flask microservices + SQLAlchemy |
+| Database | PostgreSQL (shared, DBM enabled) |
+| APM | ddtrace (auto-instrumented across all services) |
 | RUM | @datadog/browser-rum + React plugin |
 | Logs | Structured JSON logs + browser-logs |
 | Metrics | DogStatsD custom metrics |
@@ -38,29 +81,29 @@ The goal is a demo that feels like *their* environment, not a generic sandbox.
 
 ## Datadog Features Demonstrated
 
-- **APM & Distributed Tracing** — every request traced, service map shows frontend → backend → postgres
+- **APM & Distributed Tracing** — every request traced across multiple services; service map shows gateway → {products, orders, analytics} → postgres
 - **Database Monitoring** — slow queries, explain plans, `pg_stat_statements` enabled
 - **RUM + Session Replay** — 100% session capture, React component tracking, frontend errors
 - **Log Management** — structured JSON logs correlated to traces via `dd.trace_id`
-- **Error Tracking** — backend exceptions + frontend JS errors grouped automatically
-- **Continuous Profiler** — CPU and memory profiles from the Flask process
+- **Error Tracking** — backend exceptions + frontend JS errors grouped automatically, attributed to the correct service
+- **Continuous Profiler** — CPU and memory profiles from each Flask process
 - **Custom Metrics** — `ddstore.*` namespace via DogStatsD (request count, revenue, errors)
 
 ---
 
 ## Intentional Bugs (for demo)
 
-| Bug | Where | What Datadog catches |
-|---|---|---|
-| N+1 query | `GET /api/products` | APM shows N duplicate DB spans per request |
-| `NoneType` AttributeError | Product with null description | Error Tracking groups repeated exceptions |
-| `ZeroDivisionError` | `GET /api/products/3` | Unhandled exception with full stack trace in APM |
-| Slow unindexed LIKE query | `GET /api/search` | DBM flags full table scan, high latency in APM |
-| Artificial delay (1–3s) | `GET /api/recommendations` | APM p99 latency spike, visible in service map |
-| Random 15% checkout failures | `POST /api/checkout` | Error rate monitor, retry storm visible in traces |
-| Memory leak | Background worker thread | Continuous Profiler heap growth over time |
-| CPU spike | `GET /api/compute` | Profiler CPU flame graph, APM slow span |
-| Python-side aggregation | `GET /api/stats` | Full table loaded into memory instead of SQL SUM |
+| Bug | Service | Endpoint | What Datadog catches |
+|---|---|---|---|
+| N+1 query | `ddstore-products` | `GET /api/products` | APM shows N duplicate DB spans per request |
+| `NoneType` AttributeError | `ddstore-products` | `GET /api/products` | Error Tracking groups repeated exceptions |
+| `ZeroDivisionError` | `ddstore-products` | `GET /api/products/3` | Unhandled exception with full stack trace in APM |
+| Slow unindexed LIKE query | `ddstore-products` | `GET /api/search` | DBM flags full table scan, high latency in APM |
+| Artificial delay (1–3s) | `ddstore-products` | `GET /api/recommendations` | APM p99 latency spike, visible in service map |
+| Random 15% checkout failures | `ddstore-orders` | `POST /api/checkout` | Error rate monitor, retry storm in multi-service trace |
+| Memory leak | `ddstore-analytics` | Background thread | Continuous Profiler heap growth over time |
+| CPU spike | `ddstore-analytics` | `GET /api/compute` | Profiler CPU flame graph, APM slow span |
+| Python-side aggregation | `ddstore-analytics` | `GET /api/stats` | Full table loaded into memory instead of SQL SUM |
 
 ---
 
@@ -109,23 +152,29 @@ Claude will handle every step, ask if anything is unclear, and confirm when the 
 ```
 dd-demo-app/
 ├── backend/
-│   ├── app.py          # Flask API — all routes + intentional bugs
-│   ├── models.py       # SQLAlchemy models
-│   ├── seed.py         # Database seeder
+│   ├── gateway/app.py      # API Gateway — thin proxy, routes to services
+│   ├── products/app.py     # Product Service — catalog, search, recommendations
+│   ├── orders/app.py       # Order Service — cart, checkout, order history
+│   ├── analytics/app.py    # Analytics Service — stats, compute, memory leak
+│   ├── shared/models.py    # SQLAlchemy models (shared across services)
+│   ├── app.py              # Original monolith (kept for seed.py)
+│   ├── models.py           # Original models (kept for seed.py)
+│   ├── seed.py             # Database seeder
 │   ├── requirements.txt
-│   ├── .env.example    # ← template, never committed
-│   └── .env            # ← your local values, gitignored
+│   ├── .env.example        # ← template, never committed
+│   └── .env                # ← your local values, gitignored
 ├── frontend/
 │   ├── src/
-│   │   ├── datadog.js  # RUM + Logs init (reads from .env)
+│   │   ├── datadog.js      # RUM + Logs init (reads from .env)
 │   │   ├── App.jsx
 │   │   ├── pages/
 │   │   └── components/
-│   ├── .env.example    # ← template, never committed
-│   └── .env            # ← your local values, gitignored
+│   ├── .env.example        # ← template, never committed
+│   └── .env                # ← your local values, gitignored
 ├── loadgen/
-│   └── loadgen.py      # Traffic generator — run this to populate Datadog
-├── start.sh            # Starts backend + frontend together
+│   ├── loadgen.py          # Backend API traffic generator
+│   └── rum_loadgen.py      # Playwright headless browser RUM generator
+├── start.sh                # Starts all 4 microservices + frontend
 └── README.md
 ```
 
@@ -136,14 +185,14 @@ dd-demo-app/
 ### Backend (`backend/.env`)
 | Variable | Description |
 |---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `DD_SERVICE` | Service name in Datadog (`ddstore-api`) |
-| `DD_ENV` | Environment tag (`demo`) |
-| `DD_VERSION` | Version tag |
-| `DD_TRACE_AGENT_URL` | Datadog Agent trace endpoint |
+| `DATABASE_URL` | PostgreSQL connection string (shared by all services) |
+| `DD_ENV` | Environment tag (`demo`) — set in `start.sh` |
+| `DD_VERSION` | Version tag — set in `start.sh` |
 | `DD_LOGS_INJECTION` | Injects trace IDs into log lines |
 | `DD_RUNTIME_METRICS_ENABLED` | Enables runtime metrics (GC, heap, threads) |
 | `DD_PROFILING_ENABLED` | Enables Continuous Profiler |
+
+`DD_SERVICE` is set per-process in `start.sh`: `ddstore-gateway`, `ddstore-products`, `ddstore-orders`, `ddstore-analytics`.
 
 ### Frontend (`frontend/.env`)
 | Variable | Description |
