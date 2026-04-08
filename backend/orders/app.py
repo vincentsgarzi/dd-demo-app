@@ -42,10 +42,13 @@ db.init_app(app)
 PRODUCT_SERVICE = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8081")
 
 # ── Structured logging ────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format='{"time": "%(asctime)s", "level": "%(levelname)s", "logger": "%(name)s", "message": "%(message)s", "dd.trace_id": "%(dd.trace_id)s", "dd.span_id": "%(dd.span_id)s"}',
-)
+_log_fmt = '{"time": "%(asctime)s", "level": "%(levelname)s", "logger": "%(name)s", "message": "%(message)s", "dd.trace_id": "%(dd.trace_id)s", "dd.span_id": "%(dd.span_id)s"}'
+logging.basicConfig(level=logging.INFO, format=_log_fmt)
+_log_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
+os.makedirs(_log_dir, exist_ok=True)
+_fh = logging.FileHandler(os.path.join(_log_dir, "orders.log"))
+_fh.setFormatter(logging.Formatter(_log_fmt))
+logging.getLogger().addHandler(_fh)
 logger = logging.getLogger("ddstore.orders")
 
 # ── DogStatsD metrics ─────────────────────────────────────────────────────────

@@ -1,0 +1,36 @@
+# Datadog Agent — ddstore log collection
+# Copy this to /opt/datadog-agent/etc/conf.d/ddstore.d/conf.yaml
+#
+# Make sure log collection is enabled in datadog.yaml:
+#   logs_enabled: true
+#
+# Update the paths below to match your repo location.
+
+logs:
+  - type: file
+    path: /Users/<YOUR_USERNAME>/Documents/vinny-sandbox-demo/backend/logs/gateway.log
+    service: ddstore-gateway
+    source: python
+    tags:
+      - env:demo
+
+  - type: file
+    path: /Users/<YOUR_USERNAME>/Documents/vinny-sandbox-demo/backend/logs/products.log
+    service: ddstore-products
+    source: python
+    tags:
+      - env:demo
+
+  - type: file
+    path: /Users/<YOUR_USERNAME>/Documents/vinny-sandbox-demo/backend/logs/orders.log
+    service: ddstore-orders
+    source: python
+    tags:
+      - env:demo
+
+  - type: file
+    path: /Users/<YOUR_USERNAME>/Documents/vinny-sandbox-demo/backend/logs/analytics.log
+    service: ddstore-analytics
+    source: python
+    tags:
+      - env:demo
