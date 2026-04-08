@@ -76,10 +76,6 @@ def start_timer():
 def log_request(response):
     from flask import g
     duration_ms = (time.time() - g.start) * 1000
-    logger.info(f"{request.method} {request.path} {response.status_code} {duration_ms:.1f}ms", extra={
-        "http": {"method": request.method, "url": request.path, "status_code": response.status_code},
-        "duration_ms": round(duration_ms, 1),
-    })
     emit("ddstore.request.count", tags=[
         f"method:{request.method}", f"path:{request.path}", f"status:{response.status_code}",
     ])
@@ -119,6 +115,10 @@ def cart():
     if request.method == "GET":
         items = _carts.get(session_id, [])
         total = sum(i["price"] * i["quantity"] for i in items)
+        logger.info(f"Cart viewed — {len(items)} item(s), ${total:.2f} total", extra={
+            "cart": {"session_id": session_id, "items": len(items), "total": round(total, 2)},
+            "action": "cart_viewed",
+        })
         return jsonify({"items": items, "total": round(total, 2), "count": len(items)})
 
     if request.method == "POST":
@@ -128,26 +128,47 @@ def cart():
 
         product = Product.query.get(product_id)
         if not product:
+            logger.warning(f"Add to cart failed — product #{product_id} not found", extra={
+                "cart": {"session_id": session_id}, "product": {"id": product_id},
+                "action": "cart_product_not_found",
+            })
             return jsonify({"error": "Product not found"}), 404
 
-        cart = _carts.setdefault(session_id, [])
-        for item in cart:
+        cart_list = _carts.setdefault(session_id, [])
+        for item in cart_list:
             if item["product_id"] == product_id:
                 item["quantity"] += quantity
-                return jsonify({"message": "Updated", "cart": cart})
+                new_total = sum(i["price"] * i["quantity"] for i in cart_list)
+                logger.info(f"Cart updated — added {quantity} more \"{product.name}\" (now {item['quantity']}x), cart total ${new_total:.2f}", extra={
+                    "cart": {"session_id": session_id, "items": len(cart_list), "total": round(new_total, 2)},
+                    "product": {"id": product_id, "name": product.name, "price": product.price, "quantity": item["quantity"]},
+                    "action": "cart_quantity_increased",
+                })
+                return jsonify({"message": "Updated", "cart": cart_list})
 
-        cart.append({
+        cart_list.append({
             "product_id": product.id,
             "name": product.name,
             "price": product.price,
             "quantity": quantity,
             "image_url": product.image_url,
         })
+        new_total = sum(i["price"] * i["quantity"] for i in cart_list)
+        logger.info(f"Item added to cart — \"{product.name}\" x{quantity} (${product.price:.2f} each), cart now {len(cart_list)} item(s), ${new_total:.2f} total", extra={
+            "cart": {"session_id": session_id, "items": len(cart_list), "total": round(new_total, 2)},
+            "product": {"id": product.id, "name": product.name, "price": product.price, "quantity": quantity},
+            "action": "cart_item_added",
+        })
         emit("ddstore.cart.add", tags=[f"product:{product_id}"])
-        return jsonify({"message": "Added", "cart": cart})
+        return jsonify({"message": "Added", "cart": cart_list})
 
     if request.method == "DELETE":
-        _carts.pop(request.headers.get("X-Session-Id", "anonymous"), None)
+        old_cart = _carts.pop(session_id, [])
+        old_total = sum(i["price"] * i["quantity"] for i in old_cart)
+        logger.info(f"Cart cleared — {len(old_cart)} item(s) removed, ${old_total:.2f} abandoned", extra={
+            "cart": {"session_id": session_id, "items_removed": len(old_cart), "value_abandoned": round(old_total, 2)},
+            "action": "cart_cleared",
+        })
         return jsonify({"message": "Cart cleared"})
 
 
@@ -168,16 +189,38 @@ def checkout():
 
     cart_items = _carts.get(session_id, [])
     if not cart_items:
+        logger.warning(f"Checkout attempted with empty cart by {user_email}", extra={
+            "usr": {"email": user_email}, "action": "checkout_empty_cart",
+        })
         return jsonify({"error": "Cart is empty"}), 400
 
+    cart_total = sum(i["price"] * i["quantity"] for i in cart_items)
+    item_names = [f"{i['name']} x{i['quantity']}" for i in cart_items]
+    logger.info(f"Checkout started for {user_email} — {len(cart_items)} item(s), ${cart_total:.2f}: {', '.join(item_names)}", extra={
+        "usr": {"email": user_email},
+        "checkout": {"items": len(cart_items), "total": round(cart_total, 2), "product_names": item_names},
+        "action": "checkout_started",
+    })
+
     # ── Cross-service call: validate products via product service ─────────
-    # Creates distributed trace: orders → products
     for item in cart_items:
         try:
-            http_client.get(
+            resp = http_client.get(
                 f"{PRODUCT_SERVICE}/api/products/{item['product_id']}",
                 timeout=5,
             )
+            if resp.status_code == 200:
+                logger.info(f"Product validation OK — \"{item['name']}\" (#{item['product_id']}) exists in catalog", extra={
+                    "product": {"id": item["product_id"], "name": item["name"]},
+                    "action": "product_validated",
+                    "cross_service": {"target": "ddstore-products", "status": "ok"},
+                })
+            else:
+                logger.warning(f"Product validation returned {resp.status_code} for \"{item['name']}\" — proceeding anyway (no validation)", extra={
+                    "product": {"id": item["product_id"], "name": item["name"]},
+                    "action": "product_validation_ignored",
+                    "cross_service": {"target": "ddstore-products", "status_code": resp.status_code},
+                })
         except Exception:
             pass  # BUG: intentionally ignores validation failures
 
@@ -188,7 +231,17 @@ def checkout():
         attempts += 1
         if random.random() > 0.15:
             payment_success = True
+            logger.info(f"Payment authorized on attempt {attempts} for {user_email} — ${cart_total:.2f}", extra={
+                "usr": {"email": user_email},
+                "payment": {"attempt": attempts, "status": "authorized", "amount": round(cart_total, 2), "gateway": "stripe_sim"},
+                "action": "payment_authorized",
+            })
             break
+        logger.warning(f"Payment attempt {attempts} DECLINED for {user_email} — retrying in 300ms (attempt {attempts}/3)", extra={
+            "usr": {"email": user_email},
+            "payment": {"attempt": attempts, "status": "declined", "amount": round(cart_total, 2), "gateway": "stripe_sim", "retry": True},
+            "action": "payment_declined",
+        })
         time.sleep(0.3)
 
     if span:
@@ -203,9 +256,11 @@ def checkout():
             "FraudDetectionTriggered",
         ]
         err = random.choice(error_types)
-        logger.error(f"Checkout failed after {attempts} attempts: {err}", extra={
+        logger.error(f"Checkout FAILED for {user_email} after {attempts} attempts — {err} — ${cart_total:.2f} lost", extra={
             "usr": {"email": user_email},
-            "checkout": {"attempts": attempts, "error": err, "success": False},
+            "checkout": {"attempts": attempts, "error": err, "success": False, "total": round(cart_total, 2)},
+            "payment": {"final_status": "failed", "error_type": err, "gateway": "stripe_sim"},
+            "action": "checkout_failed",
         })
         emit("ddstore.checkout.failure", tags=[f"error:{err}"])
         return jsonify({"error": err, "message": "Payment failed. Please try again."}), 502
@@ -216,6 +271,10 @@ def checkout():
         user = User(email=user_email, name=user_email.split("@")[0].title())
         db.session.add(user)
         db.session.flush()
+        logger.info(f"New customer created — {user.name} ({user_email})", extra={
+            "usr": {"id": user.id, "email": user_email, "name": user.name},
+            "action": "user_created",
+        })
 
     total = sum(i["price"] * i["quantity"] for i in cart_items)
     order = Order(user_id=user.id, total=round(total, 2), status="confirmed")
@@ -231,17 +290,32 @@ def checkout():
         ))
         product = Product.query.get(item["product_id"])
         if product:
+            old_stock = product.stock
             product.stock -= item["quantity"]
+            if product.stock < 0:
+                logger.error(f"OVERSOLD \"{product.name}\" — stock went from {old_stock} to {product.stock} (negative!)", extra={
+                    "product": {"id": product.id, "name": product.name, "old_stock": old_stock, "new_stock": product.stock},
+                    "order": {"id": order.id},
+                    "action": "stock_oversold",
+                    "bug": "no_stock_validation",
+                })
+            elif old_stock <= 10:
+                logger.warning(f"Low stock alert — \"{product.name}\" now at {product.stock} units (was {old_stock})", extra={
+                    "product": {"id": product.id, "name": product.name, "old_stock": old_stock, "new_stock": product.stock},
+                    "action": "low_stock_warning",
+                })
 
     db.session.commit()
     _carts.pop(session_id, None)
 
     emit("ddstore.checkout.success", tags=[f"items:{len(cart_items)}"])
     emit("ddstore.revenue", total)
-    logger.info(f"Order {order.id} confirmed for {user_email}, total=${total:.2f}", extra={
-        "usr": {"email": user_email},
+    logger.info(f"Order #{order.id} CONFIRMED for {user_email} — ${total:.2f}, {len(cart_items)} item(s), paid on attempt {attempts}", extra={
+        "usr": {"email": user_email, "name": user.name},
         "order": {"id": order.id, "total": round(total, 2), "items": len(cart_items), "status": "confirmed"},
         "checkout": {"attempts": attempts, "success": True},
+        "payment": {"final_status": "authorized", "gateway": "stripe_sim"},
+        "action": "order_confirmed",
     })
 
     return jsonify({"order_id": order.id, "total": round(total, 2), "status": "confirmed"})
@@ -250,6 +324,10 @@ def checkout():
 @app.route("/api/orders")
 def list_orders():
     orders = Order.query.order_by(Order.created_at.desc()).limit(50).all()
+    logger.info(f"Order history loaded — {len(orders)} recent orders", extra={
+        "orders": {"count": len(orders), "limit": 50},
+        "action": "orders_listed",
+    })
     return jsonify([o.to_dict() for o in orders])
 
 

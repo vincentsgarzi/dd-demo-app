@@ -63,9 +63,20 @@ def start_timer():
 def log_request(response):
     from flask import g
     duration_ms = (time.time() - g.start) * 1000
-    logger.info(f"GATEWAY {request.method} {request.path} → {response.status_code} {duration_ms:.1f}ms", extra={
+    # Map paths to service names for log context
+    svc = "unknown"
+    if request.path.startswith(("/api/products", "/api/search", "/api/recommendations", "/api/categories")):
+        svc = "ddstore-products"
+    elif request.path.startswith(("/api/cart", "/api/checkout", "/api/orders")):
+        svc = "ddstore-orders"
+    elif request.path.startswith(("/api/stats", "/api/compute")):
+        svc = "ddstore-analytics"
+
+    logger.info(f"Routed {request.method} {request.path} → {svc} — {response.status_code} in {duration_ms:.1f}ms", extra={
         "http": {"method": request.method, "url": request.path, "status_code": response.status_code},
         "duration_ms": round(duration_ms, 1),
+        "routing": {"target_service": svc},
+        "action": "request_routed",
     })
     emit("ddstore.gateway.request.count", tags=[
         f"method:{request.method}", f"path:{request.path}", f"status:{response.status_code}",

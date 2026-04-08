@@ -69,10 +69,6 @@ def start_timer():
 def log_request(response):
     from flask import g
     duration_ms = (time.time() - g.start) * 1000
-    logger.info(f"{request.method} {request.path} {response.status_code} {duration_ms:.1f}ms", extra={
-        "http": {"method": request.method, "url": request.path, "status_code": response.status_code},
-        "duration_ms": round(duration_ms, 1),
-    })
     emit("ddstore.request.count", tags=[
         f"method:{request.method}", f"path:{request.path}", f"status:{response.status_code}",
     ])
@@ -116,17 +112,33 @@ def list_products():
         span.set_tag("products.source", "database")
 
     products = Product.query.all()
+    logger.info(f"Loading product catalog — {len(products)} products from database", extra={
+        "catalog": {"product_count": len(products), "source": "database"},
+    })
 
     result = []
+    serialization_errors = 0
     for p in products:
         try:
             result.append(p.to_dict_with_category())
         except AttributeError as e:
-            logger.error(f"Failed to serialize product {p.id}: {e}", extra={
-                "product_id": p.id, "error_type": "serialization",
+            serialization_errors += 1
+            logger.error(f"Product #{p.id} ({p.name}) has corrupt data — description is NULL, .upper() failed", extra={
+                "product": {"id": p.id, "name": p.name, "category_id": p.category_id},
+                "error_type": "NullDescriptionBug",
             })
             emit("ddstore.error", tags=["type:serialization", f"product_id:{p.id}"])
             result.append({**p.to_dict(), "category": "Unknown", "description_preview": ""})
+
+    if serialization_errors:
+        logger.warning(f"Catalog loaded with {serialization_errors} serialization error(s) — products served with fallback data", extra={
+            "catalog": {"total": len(result), "errors": serialization_errors},
+        })
+
+    logger.info(f"Catalog response ready — {len(result)} products, {len(products)} individual DB queries (N+1 detected)", extra={
+        "catalog": {"total": len(result), "db_queries": len(products) + 1},
+        "performance": {"pattern": "N+1", "expected_queries": 1, "actual_queries": len(products) + 1},
+    })
 
     emit("ddstore.products.listed", len(result))
     return jsonify(result)
@@ -143,9 +155,15 @@ def get_product(product_id):
 
     # BUG: deliberate divide-by-zero when id ends in 3
     if product_id % 10 == 3:
+        logger.error(f"Cursed product ID {product_id} triggered discount calculation bug — dividing by zero", extra={
+            "product": {"id": product_id}, "bug": "ZeroDivisionError",
+        })
         discount = 100 / (product_id - product_id)  # ZeroDivisionError
 
     product = Product.query.get_or_404(product_id)
+    logger.info(f"Product lookup: \"{product.name}\" (${product.price:.2f}, {product.stock} in stock)", extra={
+        "product": {"id": product.id, "name": product.name, "price": product.price, "stock": product.stock, "category_id": product.category_id},
+    })
     return jsonify(product.to_dict_with_category())
 
 
@@ -164,13 +182,26 @@ def search_products():
         span.set_tag("search.query", q)
         span.set_tag("db.statement", f"SELECT * FROM products WHERE name LIKE '%{q}%'")
 
+    logger.info(f"Search initiated for \"{q}\" — using unindexed LIKE query (full table scan)", extra={
+        "search": {"query": q, "strategy": "LIKE_unindexed", "index_used": False},
+    })
+
     # BUG: artificial connection pool wait
-    time.sleep(random.uniform(0.2, 0.8))
+    pool_wait = random.uniform(0.2, 0.8)
+    time.sleep(pool_wait)
+    logger.warning(f"Connection pool starved — waited {pool_wait*1000:.0f}ms for available connection", extra={
+        "search": {"query": q},
+        "db": {"pool_wait_ms": round(pool_wait * 1000, 1), "pool_exhausted": pool_wait > 0.5},
+    })
 
     # BUG: unindexed LIKE query
     products = Product.query.filter(
         Product.name.ilike(f"%{q}%") | Product.description.ilike(f"%{q}%")
     ).all()
+
+    logger.info(f"Search for \"{q}\" returned {len(products)} result(s)", extra={
+        "search": {"query": q, "results": len(products), "pool_wait_ms": round(pool_wait * 1000, 1)},
+    })
 
     emit("ddstore.search.count", tags=[f"results:{len(products)}"])
     return jsonify([p.to_dict() for p in products])
@@ -188,6 +219,10 @@ def recommendations():
     if span:
         span.set_tag("recommendation.delay_ms", int(delay * 1000))
 
+    logger.warning(f"Recommendation engine starting — estimated {delay*1000:.0f}ms inference time", extra={
+        "recommendations": {"estimated_delay_ms": round(delay * 1000)},
+    })
+
     time.sleep(delay)
 
     # BUG: inefficient — loads ALL products into memory, shuffles, slices in Python
@@ -195,12 +230,25 @@ def recommendations():
     random.shuffle(all_products)
     recommended = all_products[:4]
 
+    rec_names = [p.name for p in recommended]
+    logger.info(f"Recommendations ready — loaded all {len(all_products)} products into memory, shuffled, picked 4 (took {delay*1000:.0f}ms)", extra={
+        "recommendations": {
+            "delay_ms": round(delay * 1000),
+            "products_loaded": len(all_products),
+            "results": rec_names,
+            "strategy": "random_shuffle_in_memory",
+        },
+    })
+
     return jsonify([p.to_dict() for p in recommended])
 
 
 @app.route("/api/categories")
 def list_categories():
     cats = Category.query.all()
+    logger.info(f"Categories loaded: {', '.join(c.name for c in cats)}", extra={
+        "categories": {"count": len(cats), "names": [c.name for c in cats]},
+    })
     return jsonify([{"id": c.id, "name": c.name} for c in cats])
 
 

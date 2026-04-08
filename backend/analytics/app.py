@@ -67,6 +67,7 @@ def emit(metric, value=1, tags=None):
 
 # ── BUG: memory leak — background thread accumulates unbounded list ───────────
 _leaked_memory = []
+_worker_start_time = time.time()
 
 
 def _memory_leak_worker():
@@ -78,9 +79,20 @@ def _memory_leak_worker():
             "orders_processed": random.randint(1, 100),
         }
         _leaked_memory.append(chunk)
-        logger.info(f"Background worker processed batch, cache size: {len(_leaked_memory)}", extra={
-            "worker": {"cache_size": len(_leaked_memory), "chunk_bytes": 10_000},
-        })
+        leak_bytes = len(_leaked_memory) * 10_000
+        uptime_min = (time.time() - _worker_start_time) / 60
+
+        if len(_leaked_memory) % 20 == 0 and len(_leaked_memory) > 0:
+            logger.warning(f"Memory leak growing — cache at {len(_leaked_memory)} entries (~{leak_bytes/1024/1024:.1f}MB), never cleared since startup ({uptime_min:.0f}m ago)", extra={
+                "worker": {"cache_size": len(_leaked_memory), "leak_bytes": leak_bytes, "leak_mb": round(leak_bytes/1024/1024, 2), "uptime_minutes": round(uptime_min, 1)},
+                "action": "memory_leak_warning",
+                "bug": "unbounded_cache",
+            })
+        else:
+            logger.info(f"Background worker processed batch — cache size: {len(_leaked_memory)} (~{leak_bytes/1024:.0f}KB)", extra={
+                "worker": {"cache_size": len(_leaked_memory), "leak_bytes": leak_bytes, "orders_in_batch": chunk["orders_processed"]},
+                "action": "worker_batch_processed",
+            })
         time.sleep(15)
 
 
@@ -97,10 +109,6 @@ def start_timer():
 def log_request(response):
     from flask import g
     duration_ms = (time.time() - g.start) * 1000
-    logger.info(f"{request.method} {request.path} {response.status_code} {duration_ms:.1f}ms", extra={
-        "http": {"method": request.method, "url": request.path, "status_code": response.status_code},
-        "duration_ms": round(duration_ms, 1),
-    })
     emit("ddstore.request.count", tags=[
         f"method:{request.method}", f"path:{request.path}", f"status:{response.status_code}",
     ])
@@ -138,18 +146,34 @@ def stats():
     Dashboard stats — makes cross-service calls for distributed tracing,
     then runs unoptimized aggregate queries locally.
     """
+    logger.info("Stats dashboard requested — aggregating data across services", extra={
+        "action": "stats_requested",
+    })
+
     # ── Cross-service calls: creates distributed traces ───────────────────
-    # analytics → products (fetch product list for count)
     try:
         prod_resp = http_client.get(f"{PRODUCT_SERVICE}/api/products", timeout=10)
-    except Exception:
-        pass
+        logger.info(f"Fetched product catalog from product service — {len(prod_resp.json()) if prod_resp.ok else 'FAILED'} products", extra={
+            "cross_service": {"target": "ddstore-products", "status": prod_resp.status_code},
+            "action": "stats_fetch_products",
+        })
+    except Exception as e:
+        logger.error(f"Failed to reach product service for stats: {e}", extra={
+            "cross_service": {"target": "ddstore-products", "error": str(e)},
+            "action": "stats_fetch_products_failed",
+        })
 
-    # analytics → orders (fetch recent orders)
     try:
         orders_resp = http_client.get(f"{ORDER_SERVICE}/api/orders", timeout=10)
-    except Exception:
-        pass
+        logger.info(f"Fetched recent orders from order service — {len(orders_resp.json()) if orders_resp.ok else 'FAILED'} orders", extra={
+            "cross_service": {"target": "ddstore-orders", "status": orders_resp.status_code},
+            "action": "stats_fetch_orders",
+        })
+    except Exception as e:
+        logger.error(f"Failed to reach order service for stats: {e}", extra={
+            "cross_service": {"target": "ddstore-orders", "error": str(e)},
+            "action": "stats_fetch_orders_failed",
+        })
 
     # ── Local DB queries (bugs preserved) ─────────────────────────────────
     total_orders = Order.query.count()
@@ -159,6 +183,17 @@ def stats():
     # BUG: loads all orders into memory for Python-side sum instead of SQL SUM()
     all_orders = Order.query.all()
     total_revenue = sum(o.total for o in all_orders if o.status == "completed")
+
+    logger.warning(f"Stats computed using Python-side aggregation — loaded {len(all_orders)} orders into memory instead of using SQL SUM()", extra={
+        "stats": {
+            "total_orders": total_orders, "total_products": total_products,
+            "total_users": total_users, "total_revenue": round(total_revenue, 2),
+            "memory_leak_entries": len(_leaked_memory),
+            "orders_loaded_in_memory": len(all_orders),
+        },
+        "performance": {"pattern": "python_side_aggregation", "should_use": "SQL SUM()", "rows_loaded": len(all_orders)},
+        "action": "stats_computed",
+    })
 
     return jsonify({
         "total_orders": total_orders,
@@ -181,6 +216,11 @@ def cpu_spike():
     if span:
         span.set_tag("compute.n", n)
 
+    logger.warning(f"CPU-intensive prime computation requested — n={n:,} with naive O(n*sqrt(n)) algorithm, no cache", extra={
+        "compute": {"n": n, "algorithm": "naive_trial_division", "cached": False, "max_allowed": 500_000},
+        "action": "compute_started",
+    })
+
     start = time.time()
     # BUG: naive prime check — O(n * sqrt(n)), no cache
     primes = []
@@ -193,6 +233,12 @@ def cpu_spike():
     if span:
         span.set_tag("compute.primes_found", len(primes))
         span.set_tag("compute.elapsed_ms", int(elapsed * 1000))
+
+    level = "error" if elapsed > 5 else "warning" if elapsed > 1 else "info"
+    getattr(logger, level)(f"Prime computation complete — found {len(primes):,} primes up to {n:,} in {elapsed*1000:.0f}ms", extra={
+        "compute": {"n": n, "primes_found": len(primes), "elapsed_ms": round(elapsed * 1000, 1), "algorithm": "naive_trial_division"},
+        "action": "compute_complete",
+    })
 
     return jsonify({"primes_found": len(primes), "elapsed_ms": round(elapsed * 1000, 1)})
 
