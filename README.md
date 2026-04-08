@@ -82,7 +82,7 @@ The backend is split into **4 microservices** — each with its own `DD_SERVICE`
 ## Datadog Features Demonstrated
 
 - **APM & Distributed Tracing** — every request traced across multiple services; service map shows gateway → {products, orders, analytics} → postgres
-- **Database Monitoring** — slow queries, explain plans, `pg_stat_statements` enabled
+- **Database Monitoring** — slow queries, explain plans, `pg_stat_statements` enabled, APM↔DBM correlation
 - **RUM + Session Replay** — 100% session capture, React component tracking, frontend errors
 - **Log Management** — structured JSON logs correlated to traces via `dd.trace_id`
 - **Error Tracking** — backend exceptions + frontend JS errors grouped automatically, attributed to the correct service
@@ -107,43 +107,166 @@ The backend is split into **4 microservices** — each with its own `DD_SERVICE`
 
 ---
 
-## Setup
+## Prerequisites
 
-### Before you start — grab two things manually
+You need these installed before starting:
 
-These require logging into Datadog and cannot be automated:
+| Requirement | Check | Install |
+|---|---|---|
+| **macOS with Homebrew** | `brew --version` | [brew.sh](https://brew.sh) |
+| **Python 3.10+** | `python3 --version` | `brew install python` |
+| **Node.js 18+** | `node --version` | `brew install node` |
+| **Datadog Agent** | `datadog-agent status` | [Install docs](https://docs.datadoghq.com/agent/) |
 
-1. **RUM Application ID + Client Token**
-   - Go to **Datadog > Digital Experience > RUM > New Application**
-   - Select React, name it `ddstore`, click Create
+You also need from your **Datadog sandbox account** (must be grabbed manually from the UI):
+
+1. **Datadog API Key** — for the Agent ([Organization Settings > API Keys](https://app.datadoghq.com/organization-settings/api-keys))
+2. **RUM Application ID + Client Token** — for frontend monitoring
+   - Go to **Digital Experience > RUM > New Application**
+   - Select **React**, name it `ddstore`, click **Create**
    - Copy the `applicationId` and `clientToken` from the snippet shown
-
-2. **A Datadog Agent** must be running on your machine (port `8126` / `8125`)
-   - If you don't have one: https://docs.datadoghq.com/agent/
-
-That's it. Everything else is handled by Claude.
 
 ---
 
-### Spin up with Claude
+## Setup
 
-Clone the repo, open it in Claude Code, and paste this prompt:
+### Option A: Spin up with Claude (recommended)
+
+Clone the repo, open it in [Claude Code](https://claude.com/claude-code), and paste this prompt:
 
 ```
 I just cloned the dd-demo-app repo. Please set it up end-to-end on my machine:
 
 1. Install PostgreSQL via Homebrew if not already installed, start it, and create
    the ddstore database and ddstore_app user with pg_stat_statements enabled
-2. Create backend/.env from backend/.env.example — fill in the DATABASE_URL
-3. Create frontend/.env from frontend/.env.example — I'll give you my RUM credentials:
+2. Create a 'datadog' PostgreSQL monitoring user with pg_monitor role, create the
+   datadog.explain_statement function, and configure the Agent's postgres.d/conf.yaml
+   for DBM (use datadog-agent-configs/postgres.yaml.example as a reference)
+3. Create backend/.env from backend/.env.example — fill in the DATABASE_URL
+4. Create frontend/.env from frontend/.env.example — I'll give you my RUM credentials:
      VITE_DD_APP_ID=<paste your App ID here>
      VITE_DD_CLIENT_TOKEN=<paste your Client Token here>
-4. Set up the Python virtualenv, install dependencies, and seed the database
-5. Start the app (./start.sh) and confirm both services are healthy
-6. Start the load generator in the background so Datadog has data immediately
+5. Set up the Python virtualenv, install dependencies, and seed the database
+6. Start the app (./start.sh) and confirm all services are healthy
 ```
 
 Claude will handle every step, ask if anything is unclear, and confirm when the app is live.
+
+---
+
+### Option B: Manual setup
+
+#### 1. Install and configure PostgreSQL
+
+```bash
+brew install postgresql@16
+brew services start postgresql@16
+```
+
+Create the database and app user:
+
+```sql
+-- Run with: psql postgres
+CREATE DATABASE ddstore;
+CREATE USER ddstore_app WITH PASSWORD 'ddstore123';
+GRANT ALL PRIVILEGES ON DATABASE ddstore TO ddstore_app;
+ALTER DATABASE ddstore OWNER TO ddstore_app;
+```
+
+Enable `pg_stat_statements` for DBM:
+
+```bash
+# Find your postgresql.conf:
+psql postgres -c "SHOW config_file;"
+
+# Add/edit these lines in postgresql.conf:
+#   shared_preload_libraries = 'pg_stat_statements'
+#   track_activity_query_size = 4096
+
+# Restart PostgreSQL for changes to take effect:
+brew services restart postgresql@16
+```
+
+#### 2. Set up Database Monitoring (DBM)
+
+Create the Datadog monitoring user and explain plan function:
+
+```sql
+-- Run with: psql ddstore
+CREATE USER datadog WITH PASSWORD 'datadog123';
+GRANT pg_monitor TO datadog;
+GRANT SELECT ON pg_stat_activity TO datadog;
+
+CREATE SCHEMA IF NOT EXISTS datadog;
+GRANT USAGE ON SCHEMA datadog TO datadog;
+
+CREATE OR REPLACE FUNCTION datadog.explain_statement(
+   l_query TEXT, OUT explain JSON
+) RETURNS SETOF JSON AS $$
+DECLARE curs REFCURSOR; plan JSON;
+BEGIN
+   OPEN curs FOR EXECUTE pg_catalog.concat('EXPLAIN (FORMAT JSON) ', l_query);
+   FETCH curs INTO plan; CLOSE curs;
+   RETURN QUERY SELECT plan;
+END; $$ LANGUAGE 'plpgsql' RETURNS NULL ON NULL INPUT SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION datadog.explain_statement(TEXT) TO datadog;
+```
+
+Configure the Datadog Agent's PostgreSQL integration:
+
+```bash
+# Copy the example config
+cp datadog-agent-configs/postgres.yaml.example \
+   /opt/datadog-agent/etc/conf.d/postgres.d/conf.yaml
+
+# Edit it — set the password you chose for the datadog user
+# Then restart the Agent:
+launchctl kickstart -k gui/$(id -u)/com.datadoghq.agent
+```
+
+#### 3. Configure environment files
+
+```bash
+# Backend
+cp backend/.env.example backend/.env
+# Edit backend/.env — set DATABASE_URL:
+#   DATABASE_URL=postgresql://ddstore_app:ddstore123@localhost:5432/ddstore
+
+# Frontend
+cp frontend/.env.example frontend/.env
+# Edit frontend/.env — paste your RUM Application ID and Client Token:
+#   VITE_DD_APP_ID=your-app-id-here
+#   VITE_DD_CLIENT_TOKEN=your-client-token-here
+```
+
+#### 4. Install dependencies and seed the database
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python3 seed.py
+
+cd ../frontend
+npm install
+```
+
+#### 5. Start everything
+
+```bash
+./start.sh
+```
+
+This launches all 4 microservices, the frontend, and the load generator. Verify:
+
+```bash
+curl http://localhost:8080/api/health
+# Should show: {"status":"ok","services":{"ddstore-products":"ok","ddstore-orders":"ok","ddstore-analytics":"ok","gateway":"ok"}}
+```
+
+Data will start appearing in your Datadog sandbox within 1–2 minutes.
 
 ---
 
@@ -174,7 +297,9 @@ dd-demo-app/
 ├── loadgen/
 │   ├── loadgen.py          # Backend API traffic generator
 │   └── rum_loadgen.py      # Playwright headless browser RUM generator
-├── start.sh                # Starts all 4 microservices + frontend
+├── datadog-agent-configs/
+│   └── postgres.yaml.example  # DBM config template
+├── start.sh                # Starts all 4 microservices + frontend + loadgen
 └── README.md
 ```
 
@@ -183,23 +308,31 @@ dd-demo-app/
 ## Environment Variables
 
 ### Backend (`backend/.env`)
+
 | Variable | Description |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string (shared by all services) |
-| `DD_ENV` | Environment tag (`demo`) — set in `start.sh` |
-| `DD_VERSION` | Version tag — set in `start.sh` |
-| `DD_LOGS_INJECTION` | Injects trace IDs into log lines |
-| `DD_RUNTIME_METRICS_ENABLED` | Enables runtime metrics (GC, heap, threads) |
-| `DD_PROFILING_ENABLED` | Enables Continuous Profiler |
 
-`DD_SERVICE` is set per-process in `start.sh`: `ddstore-gateway`, `ddstore-products`, `ddstore-orders`, `ddstore-analytics`.
+The following are set automatically by `start.sh` — you don't need to configure them:
+
+| Variable | Value | Description |
+|---|---|---|
+| `DD_SERVICE` | per-service | `ddstore-gateway`, `ddstore-products`, `ddstore-orders`, `ddstore-analytics` |
+| `DD_ENV` | `demo` | Environment tag |
+| `DD_VERSION` | `1.0.0` | Version tag |
+| `DD_LOGS_INJECTION` | `true` | Injects trace IDs into log lines |
+| `DD_RUNTIME_METRICS_ENABLED` | `true` | Enables runtime metrics (GC, heap, threads) |
+| `DD_PROFILING_ENABLED` | `true` | Enables Continuous Profiler |
+| `DD_DBM_PROPAGATION_MODE` | `full` | Correlates APM traces with DBM query samples |
+| `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED` | `true` | Prevents ghost inferred services |
 
 ### Frontend (`frontend/.env`)
+
 | Variable | Description |
 |---|---|
 | `VITE_DD_APP_ID` | RUM Application ID (from Datadog UI) |
 | `VITE_DD_CLIENT_TOKEN` | RUM Client Token (from Datadog UI) |
 | `VITE_DD_SITE` | Datadog site (`datadoghq.com`) |
-| `VITE_DD_SERVICE` | Frontend service name |
-| `VITE_DD_ENV` | Environment tag |
-| `VITE_DD_VERSION` | Version tag |
+| `VITE_DD_SERVICE` | Frontend service name (`ddstore-frontend`) |
+| `VITE_DD_ENV` | Environment tag (`demo`) |
+| `VITE_DD_VERSION` | Version tag (`1.0.0`) |

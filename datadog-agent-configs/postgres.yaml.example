@@ -49,5 +49,4 @@ instances:
 
     tags:
       - env:demo
-      - service:ddstore-api
       - db:postgres
