@@ -5,6 +5,7 @@ Creates a gateway node in the Datadog Service Map with distributed traces.
 """
 import os
 import time
+import random
 import logging
 import traceback
 
@@ -100,10 +101,22 @@ def _forward_headers():
     return headers
 
 
+_request_counts = {}
+
 def _proxy(service_base, path):
     """Proxy the current request to a downstream service. ddtrace auto-instruments
     the outgoing requests call, propagating trace context."""
     url = f"{service_base}{path}"
+
+    # BUG: 3% chance of request validation error on POST/PUT
+    if request.method in ("POST", "PUT") and random.random() < 0.03:
+        def _validate_request_schema(method, path, body):
+            """Validate incoming request against OpenAPI schema."""
+            def _check_content_type(headers):
+                """Ensure Content-Type matches expected schema."""
+                raise TypeError(f"Request body validation failed: expected 'application/json; charset=utf-8' but got '{headers.get('Content-Type', 'None')}' for {method} {path}")
+            _check_content_type(request.headers)
+        _validate_request_schema(request.method, path, request.get_data())
     try:
         resp = http_client.request(
             method=request.method,

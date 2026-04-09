@@ -175,6 +175,17 @@ def stats():
             "action": "stats_fetch_orders_failed",
         })
 
+    # BUG: 7% chance of Redis cache deserialization failure
+    if random.random() < 0.07:
+        def _get_cached_stats(cache_key):
+            """Fetch pre-computed stats from Redis cache."""
+            def _deserialize_msgpack(raw_bytes):
+                """Deserialize msgpack-encoded stats payload."""
+                raise ValueError(f"msgpack: unpack failed — unexpected byte 0xc1 at offset 847 in cached stats (key={cache_key}, size=2.3KB, ttl=expired)")
+            _deserialize_msgpack(b"\xc1\x00")
+
+        _get_cached_stats("stats:dashboard:v3")
+
     # ── Local DB queries (bugs preserved) ─────────────────────────────────
     total_orders = Order.query.count()
     total_products = Product.query.count()

@@ -172,6 +172,7 @@ def search_products():
     """
     BUG (slow query): Uses LIKE '%term%' with no index — full table scan.
     Also has an artificial sleep to simulate DB connection wait.
+    BUG: 8% chance of SearchIndexCorruptionError — simulates Elasticsearch index corruption.
     """
     q = request.args.get("q", "")
     if not q:
@@ -185,6 +186,19 @@ def search_products():
     logger.info(f"Search initiated for \"{q}\" — using unindexed LIKE query (full table scan)", extra={
         "search": {"query": q, "strategy": "LIKE_unindexed", "index_used": False},
     })
+
+    # BUG: intermittent search index corruption
+    if random.random() < 0.08:
+        def _rebuild_index(query):
+            """Attempt to rebuild corrupted search index shard."""
+            shard_id = hash(query) % 5
+            raise RuntimeError(f"Search index shard {shard_id} is corrupted — rebuild failed for query '{query}'")
+
+        def _execute_search(query):
+            """Execute search against index, falling back to rebuild on corruption."""
+            _rebuild_index(query)
+
+        _execute_search(q)  # raises SearchIndexCorruptionError with deep stack
 
     # BUG: artificial connection pool wait
     pool_wait = random.uniform(0.2, 0.8)
@@ -211,6 +225,7 @@ def search_products():
 def recommendations():
     """
     BUG (slow): Simulates a recommendation engine that takes too long.
+    BUG: 5% chance of TimeoutError from ML model inference.
     """
     span = tracer.current_span()
 
@@ -224,6 +239,18 @@ def recommendations():
     })
 
     time.sleep(delay)
+
+    # BUG: ML model inference timeout
+    if random.random() < 0.05:
+        def _load_model_weights(model_version):
+            """Load recommendation model weights from disk."""
+            raise MemoryError(f"Cannot allocate tensor for model v{model_version} — OOM during inference (requires 2.1GB, available 1.8GB)")
+
+        def _run_inference(product_ids):
+            """Run recommendation model inference on product embeddings."""
+            _load_model_weights("3.2.1")
+
+        _run_inference([1, 2, 3])
 
     # BUG: inefficient — loads ALL products into memory, shuffles, slices in Python
     all_products = Product.query.all()

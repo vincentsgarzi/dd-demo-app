@@ -249,21 +249,35 @@ def checkout():
         span.set_tag("checkout.success", payment_success)
 
     if not payment_success:
-        error_types = [
-            "PaymentDeclinedException",
-            "GatewayTimeoutError",
-            "InsufficientFundsError",
-            "FraudDetectionTriggered",
+        # BUG: raises real exceptions so Error Tracking captures distinct issue types
+        error_classes = [
+            ("PaymentDeclinedException", "Card ending in 4242 was declined by issuing bank — insufficient funds"),
+            ("GatewayTimeoutError", "Stripe gateway did not respond within 5000ms — circuit breaker tripped"),
+            ("InsufficientFundsError", f"Account balance ${random.uniform(0, cart_total):.2f} is below required ${cart_total:.2f}"),
+            ("FraudDetectionTriggered", f"Transaction flagged by ML fraud model — risk score 0.{random.randint(85, 99)} exceeds threshold 0.80"),
         ]
-        err = random.choice(error_types)
-        logger.error(f"Checkout FAILED for {user_email} after {attempts} attempts — {err} — ${cart_total:.2f} lost", extra={
-            "usr": {"email": user_email},
-            "checkout": {"attempts": attempts, "error": err, "success": False, "total": round(cart_total, 2)},
-            "payment": {"final_status": "failed", "error_type": err, "gateway": "stripe_sim"},
-            "action": "checkout_failed",
-        })
-        emit("ddstore.checkout.failure", tags=[f"error:{err}"])
-        return jsonify({"error": err, "message": "Payment failed. Please try again."}), 502
+        err_name, err_msg = random.choice(error_classes)
+
+        def _process_payment(amount, gateway="stripe"):
+            """Send payment request to payment gateway."""
+            def _validate_card(card_token):
+                """Validate card with issuing bank."""
+                raise type(err_name, (Exception,), {})(err_msg)
+            _validate_card("tok_visa_4242")
+
+        _process_payment(cart_total)  # raises with deep stack trace
+
+    # BUG: 6% chance of database serialization conflict during high-concurrency checkout
+    if random.random() < 0.06:
+        def _acquire_row_lock(table, row_id):
+            """Acquire advisory lock for checkout serialization."""
+            raise Exception(f"could not serialize access due to concurrent update on table \"{table}\" row {row_id}")
+
+        def _begin_checkout_transaction(session_id):
+            """Start serializable transaction for checkout atomicity."""
+            _acquire_row_lock("orders", random.randint(1, 200))
+
+        _begin_checkout_transaction(session_id)
 
     # Create order
     user = User.query.filter_by(email=user_email).first()
