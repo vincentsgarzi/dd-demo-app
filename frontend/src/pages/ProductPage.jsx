@@ -17,18 +17,57 @@ export default function ProductPage() {
   useEffect(() => {
     setLoading(true);
     setError(null);
+    const start = performance.now();
+
+    logger.info(`Viewing product #${id}`, { product: { id: Number(id) }, action: 'product_page_opened' });
+
     api.getProduct(Number(id))
-      .then(setProduct)
+      .then(p => {
+        const elapsed = Math.round(performance.now() - start);
+        logger.info(`Product loaded — "${p.name}" ($${p.price?.toFixed(2)}, ${p.stock} in stock) in ${elapsed}ms`, {
+          product: { id: p.id, name: p.name, price: p.price, stock: p.stock, category: p.category },
+          elapsed_ms: elapsed,
+          action: 'product_loaded',
+        });
+        if (p.stock < 10) {
+          logger.warn(`Low stock on "${p.name}" — only ${p.stock} remaining`, {
+            product: { id: p.id, name: p.name, stock: p.stock },
+            action: 'low_stock_viewed',
+          });
+        }
+        setProduct(p);
+      })
       .catch(err => {
-        logger.error('Failed to load product', { product_id: id, error: err.message });
+        logger.error(`Failed to load product #${id}: ${err.message}`, {
+          product: { id: Number(id) },
+          error: { message: err.message },
+          action: 'product_load_failed',
+        });
         setError(err.message);
       })
       .finally(() => setLoading(false));
 
     // Load recommendations (intentionally slow endpoint)
     setRecsLoading(true);
+    const recsStart = performance.now();
+    logger.info('Fetching recommendations (slow endpoint)', { action: 'recommendations_requested' });
+
     api.getRecommendations()
-      .then(setRecommendations)
+      .then(recs => {
+        const elapsed = Math.round(performance.now() - recsStart);
+        const names = recs.map(r => r.name);
+        logger.info(`Recommendations loaded — ${recs.length} products in ${elapsed}ms`, {
+          recommendations: { count: recs.length, product_names: names, elapsed_ms: elapsed },
+          action: 'recommendations_loaded',
+        });
+        if (elapsed > 2000) {
+          logger.warn(`Recommendation engine is slow — ${elapsed}ms to fetch ${recs.length} products`, {
+            recommendations: { elapsed_ms: elapsed },
+            action: 'recommendations_slow',
+          });
+        }
+        setRecommendations(recs);
+      })
       .catch(() => setRecommendations([]))
       .finally(() => setRecsLoading(false));
   }, [id]);
@@ -37,9 +76,17 @@ export default function ProductPage() {
     try {
       await api.addToCart(product.id);
       setAdded(true);
+      logger.info(`Added "${product.name}" to cart ($${product.price?.toFixed(2)})`, {
+        product: { id: product.id, name: product.name, price: product.price },
+        action: 'add_to_cart_success',
+      });
       setTimeout(() => setAdded(false), 2000);
     } catch (err) {
-      logger.error('Add to cart failed', { product_id: id });
+      logger.error(`Add to cart failed for "${product?.name || id}": ${err.message}`, {
+        product: { id: Number(id), name: product?.name },
+        error: { message: err.message },
+        action: 'add_to_cart_failed',
+      });
     }
   };
 

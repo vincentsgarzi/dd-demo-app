@@ -1,17 +1,28 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../api';
+import { logger } from '../datadog';
 
 export default function CartPage() {
   const [cart, setCart] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  const load = () => api.getCart().then(setCart).finally(() => setLoading(false));
+  const load = () => api.getCart().then(c => {
+    logger.info(`Cart loaded — ${c.items.length} item(s), $${c.total.toFixed(2)} total`, {
+      cart: { items: c.items.length, total: c.total, product_names: c.items.map(i => i.name) },
+      action: 'cart_viewed',
+    });
+    setCart(c);
+  }).finally(() => setLoading(false));
 
   useEffect(() => { load(); }, []);
 
   const clearCart = async () => {
+    logger.info(`Clearing cart — abandoning ${cart.items.length} item(s) worth $${cart.total.toFixed(2)}`, {
+      cart: { items: cart.items.length, total: cart.total, product_names: cart.items.map(i => i.name) },
+      action: 'cart_cleared',
+    });
     await api.clearCart();
     load();
   };
@@ -55,7 +66,13 @@ export default function CartPage() {
           Clear cart
         </button>
         <button
-          onClick={() => navigate('/checkout')}
+          onClick={() => {
+            logger.info(`Proceeding to checkout with ${cart.items.length} item(s), $${cart.total.toFixed(2)}`, {
+              cart: { items: cart.items.length, total: cart.total },
+              action: 'proceed_to_checkout',
+            });
+            navigate('/checkout');
+          }}
           className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-xl transition-colors"
         >
           Subscribe →

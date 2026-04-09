@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { logger } from '../datadog';
 
 export default function AdminPage() {
   const [stats, setStats] = useState(null);
@@ -9,17 +10,57 @@ export default function AdminPage() {
   const [n, setN] = useState(50000);
 
   useEffect(() => {
-    api.getStats().then(setStats).finally(() => setLoading(false));
-    const interval = setInterval(() => api.getStats().then(setStats), 5000);
+    logger.info('Admin dashboard opened — fetching stats', { action: 'admin_opened' });
+
+    api.getStats().then(s => {
+      logger.info(`Dashboard stats loaded — ${s.total_orders} orders, ${s.total_products} products, $${s.total_revenue?.toFixed(2)} revenue`, {
+        stats: { orders: s.total_orders, products: s.total_products, users: s.total_users, revenue: s.total_revenue, memory_leak_entries: s.memory_leak_entries },
+        action: 'stats_loaded',
+      });
+      if (s.memory_leak_entries > 50) {
+        logger.warn(`Memory leak detected — ${s.memory_leak_entries} entries in unbounded cache`, {
+          stats: { memory_leak_entries: s.memory_leak_entries },
+          action: 'memory_leak_warning',
+        });
+      }
+      setStats(s);
+    }).finally(() => setLoading(false));
+
+    const interval = setInterval(() => {
+      api.getStats().then(s => {
+        logger.info('Stats auto-refreshed', {
+          stats: { orders: s.total_orders, revenue: s.total_revenue, memory_leak_entries: s.memory_leak_entries },
+          action: 'stats_refreshed',
+        });
+        setStats(s);
+      });
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
   const runCompute = async () => {
     setComputing(true);
     setCompute(null);
+    logger.warn(`CPU spike triggered — computing primes up to ${n.toLocaleString()} with naive algorithm`, {
+      compute: { n, algorithm: 'naive_trial_division' },
+      action: 'compute_triggered',
+    });
+    const start = performance.now();
     try {
       const result = await api.computePrimes(n);
+      const elapsed = Math.round(performance.now() - start);
       setCompute(result);
+      const level = elapsed > 5000 ? 'error' : elapsed > 2000 ? 'warn' : 'info';
+      logger[level](`Prime computation complete — ${result.primes_found.toLocaleString()} primes found in ${elapsed}ms`, {
+        compute: { n, primes_found: result.primes_found, elapsed_ms: elapsed, server_elapsed_ms: result.elapsed_ms },
+        action: 'compute_complete',
+      });
+    } catch (err) {
+      logger.error(`CPU spike computation failed: ${err.message}`, {
+        compute: { n },
+        error: { message: err.message },
+        action: 'compute_failed',
+      });
     } finally {
       setComputing(false);
     }

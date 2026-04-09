@@ -14,14 +14,31 @@ export default function CheckoutPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+
+    logger.info(`Checkout submitted for ${email} — processing payment`, {
+      usr: { email },
+      action: 'checkout_submitted',
+    });
+
+    const start = performance.now();
     try {
       const result = await api.checkout(email);
+      const elapsed = Math.round(performance.now() - start);
       setOrder(result);
-      logger.info('Checkout success', { order_id: result.order_id, total: result.total });
+      logger.info(`Order #${result.order_id} confirmed — $${result.total.toFixed(2)} charged to ${email} in ${elapsed}ms`, {
+        usr: { email },
+        order: { id: result.order_id, total: result.total, elapsed_ms: elapsed },
+        action: 'checkout_success',
+      });
     } catch (err) {
+      const elapsed = Math.round(performance.now() - start);
       const errorMsg = err.data?.error || err.message;
       setError(errorMsg);
-      logger.error('Checkout failed', { error: errorMsg, email });
+      logger.error(`Checkout FAILED for ${email} after ${elapsed}ms — ${errorMsg}`, {
+        usr: { email },
+        error: { message: errorMsg, elapsed_ms: elapsed },
+        action: 'checkout_failed',
+      });
     } finally {
       setLoading(false);
     }

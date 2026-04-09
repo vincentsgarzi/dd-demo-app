@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { logger } from '../datadog';
 
 const STATUS_COLOR = {
   completed: 'bg-green-100 text-green-700',
@@ -13,7 +14,24 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getOrders().then(setOrders).finally(() => setLoading(false));
+    const start = performance.now();
+    logger.info('Loading order history', { action: 'orders_requested' });
+
+    api.getOrders().then(data => {
+      const elapsed = Math.round(performance.now() - start);
+      const totalRevenue = data.reduce((sum, o) => sum + o.total, 0);
+      const statusBreakdown = data.reduce((acc, o) => { acc[o.status] = (acc[o.status] || 0) + 1; return acc; }, {});
+      logger.info(`Order history loaded — ${data.length} orders, $${totalRevenue.toFixed(2)} total revenue in ${elapsed}ms`, {
+        orders: { count: data.length, total_revenue: totalRevenue, elapsed_ms: elapsed, status_breakdown: statusBreakdown },
+        action: 'orders_loaded',
+      });
+      setOrders(data);
+    }).catch(err => {
+      logger.error(`Failed to load order history: ${err.message}`, {
+        error: { message: err.message },
+        action: 'orders_failed',
+      });
+    }).finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="text-center py-16 text-gray-400 animate-pulse">Loading orders…</div>;

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
+import { logger } from '../datadog';
 import ProductCard from '../components/ProductCard';
 
 export default function HomePage() {
@@ -13,10 +14,37 @@ export default function HomePage() {
   const load = async () => {
     setLoading(true);
     setError(null);
+    const start = performance.now();
     try {
+      if (q) {
+        logger.info('Search initiated from storefront', { search: { query: q }, action: 'search_started' });
+      } else {
+        logger.info('Loading product catalog', { action: 'catalog_requested' });
+      }
+
       const data = q ? await api.searchProducts(q) : await api.getProducts();
+      const elapsed = Math.round(performance.now() - start);
+
+      if (q) {
+        logger.info(`Search for "${q}" returned ${data.length} result(s) in ${elapsed}ms`, {
+          search: { query: q, results: data.length, elapsed_ms: elapsed },
+          action: 'search_complete',
+        });
+      } else {
+        const categories = [...new Set(data.map(p => p.category).filter(Boolean))];
+        logger.info(`Catalog loaded — ${data.length} products across ${categories.length} categories in ${elapsed}ms`, {
+          catalog: { product_count: data.length, categories: categories, category_count: categories.length, elapsed_ms: elapsed },
+          action: 'catalog_loaded',
+        });
+      }
       setProducts(data);
     } catch (err) {
+      const elapsed = Math.round(performance.now() - start);
+      logger.error(`Failed to load ${q ? `search results for "${q}"` : 'product catalog'} after ${elapsed}ms: ${err.message}`, {
+        search: q ? { query: q } : undefined,
+        error: { message: err.message, elapsed_ms: elapsed },
+        action: q ? 'search_failed' : 'catalog_failed',
+      });
       setError(err.message);
     } finally {
       setLoading(false);
