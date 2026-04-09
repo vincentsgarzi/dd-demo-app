@@ -93,17 +93,35 @@ The backend is split into **4 microservices** — each with its own `DD_SERVICE`
 
 ## Intentional Bugs (for demo)
 
+### Backend Errors
+
 | Bug | Service | Endpoint | What Datadog catches |
 |---|---|---|---|
 | N+1 query | `ddstore-products` | `GET /api/products` | APM shows N duplicate DB spans per request |
 | `NoneType` AttributeError | `ddstore-products` | `GET /api/products` | Error Tracking groups repeated exceptions |
 | `ZeroDivisionError` | `ddstore-products` | `GET /api/products/3` | Unhandled exception with full stack trace in APM |
 | Slow unindexed LIKE query | `ddstore-products` | `GET /api/search` | DBM flags full table scan, high latency in APM |
+| Search index corruption (8%) | `ddstore-products` | `GET /api/search` | RuntimeError with nested stack trace |
 | Artificial delay (1–3s) | `ddstore-products` | `GET /api/recommendations` | APM p99 latency spike, visible in service map |
-| Random 15% checkout failures | `ddstore-orders` | `POST /api/checkout` | Error rate monitor, retry storm in multi-service trace |
+| ML model OOM (5%) | `ddstore-products` | `GET /api/recommendations` | MemoryError from model inference |
+| Payment failures (~15%) | `ddstore-orders` | `POST /api/checkout` | 4 distinct exception types with retry storm |
+| DB serialization conflict (6%) | `ddstore-orders` | `POST /api/checkout` | Concurrent update exception with stack trace |
+| No stock validation | `ddstore-orders` | `POST /api/checkout` | Oversold products (negative stock) |
+| Cache deserialization (7%) | `ddstore-analytics` | `GET /api/stats` | ValueError from corrupted msgpack cache |
 | Memory leak | `ddstore-analytics` | Background thread | Continuous Profiler heap growth over time |
 | CPU spike | `ddstore-analytics` | `GET /api/compute` | Profiler CPU flame graph, APM slow span |
 | Python-side aggregation | `ddstore-analytics` | `GET /api/stats` | Full table loaded into memory instead of SQL SUM |
+| Request validation (3%) | `ddstore-gateway` | POST/PUT requests | TypeError from schema validation |
+
+### Frontend Errors (RUM Error Tracking)
+
+| Bug | Page | Trigger | Error Type |
+|---|---|---|---|
+| Premium tier crash | Product detail | Product ID divisible by 5 | `Error: Cannot read properties of undefined (reading 'tier')` |
+| Long task (120ms block) | Product detail | Product ID divisible by 7 | RUM Long Task detection |
+| Pricing tier null | Home page | 4% random chance | `TypeError: pricing_tiers is undefined` |
+| Checkout config crash | Checkout | 6% random chance | `TypeError: Cannot read properties of undefined (reading 'validation')` |
+| Chart render crash | Admin dashboard | 8% after compute | `TypeError: null is not an object` |
 
 ---
 

@@ -94,15 +94,9 @@ def log_request(response):
 # ── Error handler — ensures full stack trace on the root span ─────────────
 @app.errorhandler(Exception)
 def handle_exception(e):
-    tb = traceback.format_exc()
-    span = tracer.current_span()
-    if span:
-        span.set_tag("error.message", str(e))
-        span.set_tag("error.type", type(e).__name__)
-        span.set_tag("error.stack", tb)
-        span.error = 1
     logger.error(f"Unhandled {type(e).__name__}: {e}", extra={
         "error_type": type(e).__name__, "error_message": str(e),
+        "error_stack": traceback.format_exc(),
     })
     return jsonify({"error": type(e).__name__, "message": str(e)}), 500
 
@@ -143,47 +137,19 @@ def _proxy(service_base, path):
             timeout=60,
         )
 
-        # Tag BOTH current and root spans with downstream errors so APM shows full context
-        if resp.status_code >= 400:
-            error_msg = f"Downstream {resp.status_code}: {url}"
-            error_type = "DownstreamError"
-            try:
-                body = resp.json()
-                if "error" in body:
-                    error_msg = f"{body['error']}: {body.get('message', url)}"
-                    error_type = body["error"]
-            except Exception:
-                pass
-
-            # Only tag the requests span (child), not the root flask span —
-            # keeps the error on the span that actually made the downstream call
-            span = tracer.current_span()
-            if span:
-                span.set_tag("error.message", error_msg)
-                span.set_tag("error.type", error_type)
-                span.error = 1
+        # Don't manually tag spans with downstream errors — the downstream service's
+        # trace already has the error on the correct span. ddtrace propagates error
+        # status automatically. Manual tagging creates confusing duplicates.
 
         return (resp.content, resp.status_code, {"Content-Type": resp.headers.get("Content-Type", "application/json")})
-    except http_client.exceptions.ConnectionError as e:
-        tb = traceback.format_exc()
-        span = tracer.current_span()
-        if span:
-            span.set_tag("error.message", f"Service unavailable: {url}")
-            span.set_tag("error.type", "ConnectionError")
-            span.set_tag("error.stack", tb)
-            span.error = 1
+    except http_client.exceptions.ConnectionError:
+        # ddtrace auto-tags the requests span with the ConnectionError
         logger.error(f"Downstream service unavailable: {url}", extra={
             "downstream": {"url": url, "error": "ConnectionError"},
         })
         return jsonify({"error": "ConnectionError", "message": f"Service unavailable: {url}"}), 503
-    except http_client.exceptions.Timeout as e:
-        tb = traceback.format_exc()
-        span = tracer.current_span()
-        if span:
-            span.set_tag("error.message", f"Service timeout: {url}")
-            span.set_tag("error.type", "TimeoutError")
-            span.set_tag("error.stack", tb)
-            span.error = 1
+    except http_client.exceptions.Timeout:
+        # ddtrace auto-tags the requests span with the Timeout
         logger.error(f"Downstream service timeout: {url}", extra={
             "downstream": {"url": url, "error": "Timeout"},
         })
