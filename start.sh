@@ -71,6 +71,12 @@ python3 loadgen/loadgen.py 1.5 &
 LOADGEN_PID=$!
 echo "  Loadgen PID: $LOADGEN_PID"
 
+echo ""
+echo "🎭 Starting RUM load generator (Playwright)..."
+python3 loadgen/rum_loadgen.py --users 2 &
+RUM_LOADGEN_PID=$!
+echo "  RUM Loadgen PID: $RUM_LOADGEN_PID"
+
 # ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
 echo "✅ Datadog Marketplace is running!"
@@ -81,10 +87,11 @@ echo "   Products:   http://localhost:8081/api/health"
 echo "   Orders:     http://localhost:8082/api/health"
 echo "   Analytics:  http://localhost:8083/api/health"
 echo "   Load gen:   running (PID $LOADGEN_PID)"
+echo "   RUM gen:    running (PID $RUM_LOADGEN_PID)"
 echo ""
 echo "   Service Map: gateway → {products, orders, analytics} → postgres"
 echo ""
 echo "Press Ctrl+C to stop all services."
 
-trap "echo ''; echo 'Stopping all services...'; kill $GATEWAY_PID $PRODUCTS_PID $ORDERS_PID $ANALYTICS_PID $FRONTEND_PID $LOADGEN_PID 2>/dev/null; exit" INT TERM
+trap "echo ''; echo 'Stopping all services...'; kill $GATEWAY_PID $PRODUCTS_PID $ORDERS_PID $ANALYTICS_PID $FRONTEND_PID $LOADGEN_PID $RUM_LOADGEN_PID 2>/dev/null; exit" INT TERM
 wait

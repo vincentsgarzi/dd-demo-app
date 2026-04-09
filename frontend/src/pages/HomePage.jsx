@@ -34,7 +34,7 @@ export default function HomePage() {
         </h1>
       ) : (
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Datadog Marketplace 🐶</h1>
+          <h1 className="text-4xl font-extrabold text-[#632ca6]">Datadog Marketplace 🐶</h1>
           <p className="text-gray-500 mt-2">The only place to buy observability. Fully monitored by Datadog — including this sentence.</p>
         </div>
       )}
