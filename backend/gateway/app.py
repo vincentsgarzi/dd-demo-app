@@ -94,11 +94,12 @@ def log_request(response):
 # ── Error handler — ensures full stack trace on the root span ─────────────
 @app.errorhandler(Exception)
 def handle_exception(e):
-    span = tracer.current_root_span()
+    tb = traceback.format_exc()
+    span = tracer.current_span()
     if span:
         span.set_tag("error.message", str(e))
         span.set_tag("error.type", type(e).__name__)
-        span.set_tag("error.stack", traceback.format_exc())
+        span.set_tag("error.stack", tb)
         span.error = 1
     logger.error(f"Unhandled {type(e).__name__}: {e}", extra={
         "error_type": type(e).__name__, "error_message": str(e),
@@ -154,33 +155,35 @@ def _proxy(service_base, path):
             except Exception:
                 pass
 
-            for span in [tracer.current_span(), tracer.current_root_span()]:
-                if span:
-                    span.set_tag("error.message", error_msg)
-                    span.set_tag("error.type", error_type)
-                    span.error = 1
+            # Only tag the requests span (child), not the root flask span —
+            # keeps the error on the span that actually made the downstream call
+            span = tracer.current_span()
+            if span:
+                span.set_tag("error.message", error_msg)
+                span.set_tag("error.type", error_type)
+                span.error = 1
 
         return (resp.content, resp.status_code, {"Content-Type": resp.headers.get("Content-Type", "application/json")})
     except http_client.exceptions.ConnectionError as e:
         tb = traceback.format_exc()
-        for span in [tracer.current_span(), tracer.current_root_span()]:
-            if span:
-                span.set_tag("error.message", f"Service unavailable: {url}")
-                span.set_tag("error.type", "ConnectionError")
-                span.set_tag("error.stack", tb)
-                span.error = 1
+        span = tracer.current_span()
+        if span:
+            span.set_tag("error.message", f"Service unavailable: {url}")
+            span.set_tag("error.type", "ConnectionError")
+            span.set_tag("error.stack", tb)
+            span.error = 1
         logger.error(f"Downstream service unavailable: {url}", extra={
             "downstream": {"url": url, "error": "ConnectionError"},
         })
         return jsonify({"error": "ConnectionError", "message": f"Service unavailable: {url}"}), 503
     except http_client.exceptions.Timeout as e:
         tb = traceback.format_exc()
-        for span in [tracer.current_span(), tracer.current_root_span()]:
-            if span:
-                span.set_tag("error.message", f"Service timeout: {url}")
-                span.set_tag("error.type", "TimeoutError")
-                span.set_tag("error.stack", tb)
-                span.error = 1
+        span = tracer.current_span()
+        if span:
+            span.set_tag("error.message", f"Service timeout: {url}")
+            span.set_tag("error.type", "TimeoutError")
+            span.set_tag("error.stack", tb)
+            span.error = 1
         logger.error(f"Downstream service timeout: {url}", extra={
             "downstream": {"url": url, "error": "Timeout"},
         })

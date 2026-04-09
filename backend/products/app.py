@@ -80,12 +80,12 @@ def log_request(response):
 @app.errorhandler(Exception)
 def handle_exception(e):
     tb = traceback.format_exc()
-    for span in [tracer.current_span(), tracer.current_root_span()]:
-        if span:
-            span.set_tag("error.message", str(e))
-            span.set_tag("error.type", type(e).__name__)
-            span.set_tag("error.stack", tb)
-            span.error = 1
+    span = tracer.current_span()
+    if span:
+        span.set_tag("error.message", str(e))
+        span.set_tag("error.type", type(e).__name__)
+        span.set_tag("error.stack", tb)
+        span.error = 1
     logger.error(f"Unhandled {type(e).__name__}: {e}", extra={
         "error_type": type(e).__name__, "error_message": str(e),
     })
