@@ -157,33 +157,50 @@ export default function ProductPage() {
       </button>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-        <div className="rounded-xl overflow-hidden bg-gray-100 aspect-square">
-          <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+        <div
+          className="rounded-xl overflow-hidden aspect-square flex items-center justify-center"
+          style={{ background: `linear-gradient(135deg, ${product.image_url || '#632ca6'}, ${product.image_url || '#632ca6'}cc)` }}
+        >
+          <span className="text-white/15 text-[120px] font-black select-none leading-none">
+            {product.name.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase()}
+          </span>
         </div>
 
         <div className="flex flex-col">
-          <div className="text-sm text-purple-600 font-medium mb-2">{product.category || 'Uncategorized'}</div>
+          <div className="text-sm font-medium mb-2" style={{ color: product.image_url || '#632ca6' }}>{product.category || 'Uncategorized'}</div>
           <h1 className="text-2xl font-bold text-gray-900 mb-3">{product.name}</h1>
           <p className="text-gray-600 text-sm leading-relaxed mb-4">{product.description || 'No description available.'}</p>
 
           <div className="mt-auto">
-            <div className="text-3xl font-bold text-gray-900 mb-2">${product.price?.toFixed(2)}</div>
+            {product.price === 0 ? (
+              <div className="text-2xl font-bold text-green-600 mb-2">Included with Enterprise</div>
+            ) : (
+              <div className="mb-2">
+                <span className="text-3xl font-bold text-gray-900">${product.price?.toFixed(2)}</span>
+                <span className="text-sm text-gray-400 ml-1">/host/mo</span>
+              </div>
+            )}
             {product.stock < 10 && (
-              <p className="text-sm text-red-500 mb-3">⚠️ Only {product.stock} left in stock</p>
+              <p className="text-sm text-amber-600 mb-3 flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-amber-500 rounded-full" />
+                Only {product.stock} licenses left
+              </p>
             )}
             <button
               onClick={handleAdd}
               className={`w-full py-3 px-6 rounded-xl font-semibold text-white transition-all ${
-                added ? 'bg-green-500' : 'bg-purple-600 hover:bg-purple-700'
+                added ? 'bg-green-500' : 'hover:opacity-90'
               }`}
+              style={!added ? { backgroundColor: product.image_url || '#632ca6' } : {}}
             >
-              {added ? '✓ Added to cart!' : 'Add to cart'}
+              {added ? '✓ Added to plan!' : 'Add to plan'}
             </button>
             <button
               onClick={() => { handleAdd(); navigate('/checkout'); }}
-              className="w-full mt-2 py-3 px-6 rounded-xl font-semibold border border-purple-600 text-purple-600 hover:bg-purple-50 transition-colors"
+              className="w-full mt-2 py-3 px-6 rounded-xl font-semibold border transition-colors hover:bg-gray-50"
+              style={{ borderColor: product.image_url || '#632ca6', color: product.image_url || '#632ca6' }}
             >
-              Buy now
+              Subscribe now
             </button>
           </div>
         </div>

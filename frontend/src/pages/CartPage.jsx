@@ -44,10 +44,15 @@ export default function CartPage() {
       <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-100 mb-4">
         {cart.items.map((item, i) => (
           <div key={i} className="flex items-center gap-4 p-4">
-            <img src={item.image_url} alt={item.name} className="w-16 h-16 object-cover rounded-lg bg-gray-100" />
-            <div className="flex-1">
-              <p className="font-medium text-gray-900 text-sm">{item.name}</p>
-              <p className="text-gray-500 text-xs">Qty: {item.quantity}</p>
+            <div
+              className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: `linear-gradient(135deg, ${item.image_url || '#632ca6'}, ${item.image_url || '#632ca6'}cc)` }}
+            >
+              <span className="text-white/60 text-xs font-bold">{item.name.split(' ').map(w => w[0]).join('').slice(0, 2)}</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-gray-900 text-sm truncate">{item.name}</p>
+              <p className="text-gray-500 text-xs">{item.quantity} {item.quantity === 1 ? 'host' : 'hosts'} /mo</p>
             </div>
             <span className="font-semibold text-gray-900">${(item.price * item.quantity).toFixed(2)}</span>
           </div>
@@ -55,9 +60,12 @@ export default function CartPage() {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
-        <div className="flex justify-between font-bold text-lg">
-          <span>Total</span>
-          <span>${cart.total.toFixed(2)}</span>
+        <div className="flex justify-between items-baseline">
+          <span className="font-bold text-lg text-gray-900">Monthly total</span>
+          <div>
+            <span className="font-bold text-lg text-gray-900">${cart.total.toFixed(2)}</span>
+            <span className="text-xs text-gray-400 ml-1">/mo</span>
+          </div>
         </div>
       </div>
 

@@ -73,9 +73,12 @@ export default function HomePage() {
           <span className="text-base font-normal text-gray-500 ml-2">({products.length} found)</span>
         </h1>
       ) : (
-        <div className="mb-8">
-          <h1 className="text-4xl font-extrabold text-[#632ca6]">Datadog Marketplace 🐶</h1>
-          <p className="text-gray-500 mt-2">The only place to buy observability. Fully monitored by Datadog — including this sentence.</p>
+        <div className="mb-10">
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-3xl font-extrabold text-gray-900">DD Store</h1>
+            <span className="text-xs font-medium bg-[#632ca6] text-white px-2 py-0.5 rounded-full">DEMO</span>
+          </div>
+          <p className="text-gray-500 text-sm">Observability products, fully monitored by Datadog.</p>
         </div>
       )}
 
@@ -83,12 +86,12 @@ export default function HomePage() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {[...Array(8)].map((_, i) => (
             <div key={i} className="bg-white rounded-xl border border-gray-100 overflow-hidden animate-pulse">
-              <div className="aspect-[4/3] bg-gray-200" />
+              <div className="aspect-[5/3] bg-gray-100" />
               <div className="p-4 space-y-2">
-                <div className="h-3 bg-gray-200 rounded w-1/3" />
-                <div className="h-4 bg-gray-200 rounded w-3/4" />
-                <div className="h-3 bg-gray-200 rounded w-full" />
-                <div className="h-8 bg-gray-200 rounded mt-2" />
+                <div className="h-3 bg-gray-100 rounded w-1/3" />
+                <div className="h-4 bg-gray-100 rounded w-3/4" />
+                <div className="h-3 bg-gray-100 rounded w-full" />
+                <div className="h-8 bg-gray-100 rounded mt-2" />
               </div>
             </div>
           ))}

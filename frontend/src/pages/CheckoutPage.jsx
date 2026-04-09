@@ -99,7 +99,7 @@ export default function CheckoutPage() {
         </div>
 
         <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-500">
-          💳 Demo card: 4242 4242 4242 4242 — may fail randomly (that's the point!)
+          This is a demo environment. Payment processing may fail intermittently — that's intentional for Datadog Error Tracking demos.
         </div>
 
         <button

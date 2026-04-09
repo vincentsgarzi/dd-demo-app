@@ -94,13 +94,13 @@ export default function AdminPage() {
       ) : stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {[
-            { label: 'Total Orders', value: stats.total_orders, icon: '📦' },
-            { label: 'Products', value: stats.total_products, icon: '🛍️' },
-            { label: 'Users', value: stats.total_users, icon: '👤' },
-            { label: 'Revenue', value: `$${stats.total_revenue?.toFixed(2)}`, icon: '💰' },
+            { label: 'Total Orders', value: stats.total_orders, color: '#7B61FF' },
+            { label: 'Products', value: stats.total_products, color: '#4ECDC4' },
+            { label: 'Users', value: stats.total_users, color: '#F7B731' },
+            { label: 'Revenue', value: `$${stats.total_revenue?.toFixed(2)}`, color: '#26DE81' },
           ].map(s => (
             <div key={s.label} className="bg-white border border-gray-100 rounded-xl p-4">
-              <div className="text-2xl mb-1">{s.icon}</div>
+              <div className="w-2 h-2 rounded-full mb-2" style={{ backgroundColor: s.color }} />
               <div className="text-2xl font-bold text-gray-900">{s.value}</div>
               <div className="text-xs text-gray-500">{s.label}</div>
             </div>

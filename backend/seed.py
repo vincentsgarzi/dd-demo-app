@@ -13,31 +13,33 @@ CATEGORIES = [
     "Platform",
 ]
 
+# Pricing is modeled as $/host/month to look like real SaaS subscription pricing.
+# image_url stores a color hex used for the product card gradient background.
 PRODUCTS = [
     # Observability
-    ("APM & Distributed Tracing",         150.00, 1, "https://picsum.photos/seed/dd1/400/300",  "End-to-end visibility across your entire distributed system with flame graphs, service maps, and trace search."),
-    ("Continuous Profiler",                  4.00, 1, "https://picsum.photos/seed/dd2/400/300",  "Code-level performance insights in production. Pinpoint CPU, memory, and I/O bottlenecks without overhead."),
-    ("Error Tracking",                      20.00, 1, "https://picsum.photos/seed/dd3/400/300",  None),  # BUG: NULL description triggers NoneType error
-    ("Watchdog",                            10.00, 1, "https://picsum.photos/seed/dd4/400/300",  "AI-powered anomaly detection that surfaces issues before your users notice them."),
+    ("APM & Distributed Tracing",         31.00, 1, "#7B61FF", "End-to-end distributed tracing with flame graphs, service maps, and automatic instrumentation for 200+ frameworks."),
+    ("Continuous Profiler",               12.00, 1, "#9B7BFF", "Always-on, low-overhead code profiling in production. Pinpoint CPU, memory, and I/O hotspots down to the line of code."),
+    ("Error Tracking",                    15.00, 1, "#6C4FDB", None),  # BUG: NULL description triggers NoneType error
+    ("Watchdog",                           0.00, 1, "#8B6BFF", "AI-powered anomaly detection that automatically surfaces issues across metrics, traces, and logs — no configuration required."),
     # Infrastructure
-    ("Infrastructure Monitoring",           15.00, 2, "https://picsum.photos/seed/dd5/400/300",  "Real-time metrics from 700+ integrations. Correlate infra health with app performance in one view."),
-    ("Network Performance Monitoring",       5.00, 2, "https://picsum.photos/seed/dd6/400/300",  "Visualize network flows, latency, and errors between every service, host, and cloud region."),
-    ("Database Monitoring",                 70.00, 2, "https://picsum.photos/seed/dd7/400/300",  "Query-level performance metrics, explain plans, and active session tracking for Postgres, MySQL, and more."),
-    ("Container Monitoring",                 5.00, 2, "https://picsum.photos/seed/dd8/400/300",  "Full visibility into Docker, Kubernetes, and container orchestration. Live container map included."),
+    ("Infrastructure Monitoring",         23.00, 2, "#FF6B6B", "Real-time metrics from 750+ integrations. Auto-discovery, tagging, and correlation with application performance data."),
+    ("Network Performance Monitoring",    10.00, 2, "#FF8787", "Map every network flow between services, hosts, and cloud regions. Detect retransmits, latency, and DNS issues."),
+    ("Database Monitoring",               70.00, 2, "#E85D5D", "Query-level performance metrics, explain plans, blocking queries, and active session monitoring for Postgres, MySQL, SQL Server, and more."),
+    ("Container Monitoring",              15.00, 2, "#FF7B7B", "Full visibility into Kubernetes clusters, Docker containers, and orchestration. Live container map and resource utilization."),
     # Security
-    ("Cloud Security Management",            3.00, 3, "https://picsum.photos/seed/dd9/400/300",  "Detect misconfigurations, threats, and compliance violations across your cloud accounts in real time."),
-    ("Application Security Management",      2.00, 3, "https://picsum.photos/seed/dd10/400/300", "Runtime protection against OWASP Top 10, injection attacks, and business logic abuse — zero rule writing."),
-    ("Sensitive Data Scanner",              25.00, 3, "https://picsum.photos/seed/dd11/400/300", "Automatically detect and redact PII, secrets, and sensitive data flowing through your logs and traces."),
+    ("Cloud Security Management",         12.00, 3, "#4ECDC4", "Continuous posture management and threat detection across AWS, Azure, and GCP. 500+ out-of-the-box compliance rules."),
+    ("Application Security Management",   31.00, 3, "#45B7AA", "Runtime threat detection and blocking for OWASP Top 10 — SQL injection, XSS, SSRF, and more. No WAF rules to write."),
+    ("Sensitive Data Scanner",            18.00, 3, "#38A89D", "Automatically detect and redact PII, API keys, and secrets flowing through logs, traces, and events before they're stored."),
     # Log Management
-    ("Log Management",                       0.10, 4, "https://picsum.photos/seed/dd12/400/300", "Ingest, process, and explore logs at any scale. Full correlation with APM traces and infrastructure metrics."),
-    ("Audit Trail",                         25.00, 4, "https://picsum.photos/seed/dd13/400/300", "Immutable record of every action taken in your Datadog account. SOC2 and HIPAA compliance-ready."),
+    ("Log Management",                     1.70, 4, "#F7B731", "Ingest, process, archive, and rehydrate logs at any scale. Full correlation with APM traces and infrastructure metrics."),
+    ("Audit Trail",                       10.00, 4, "#F5A623", "Immutable, tamper-proof record of every action in your Datadog organization. SOC 2, HIPAA, and FedRAMP ready."),
     # Synthetics & Testing
-    ("Synthetic Monitoring",                 5.00, 5, "https://picsum.photos/seed/dd14/400/300", "Proactively simulate user journeys from 30+ global locations. API, browser, and multistep tests."),
-    ("Real User Monitoring",                 1.50, 5, "https://picsum.photos/seed/dd15/400/300", "Capture every user interaction, page load, and frontend error. Session replay included."),
-    ("Mobile RUM",                           1.50, 5, "https://picsum.photos/seed/dd16/400/300", "End-to-end monitoring for iOS and Android. Crash reporting, ANR tracking, and mobile session replay."),
+    ("Synthetic Monitoring",               5.00, 5, "#26DE81", "Proactive uptime monitoring from 30+ global locations. API tests, browser tests, and multi-step transaction recording."),
+    ("Real User Monitoring",               1.50, 5, "#2BCB71", "Capture every user session — page loads, clicks, errors, and Core Web Vitals. Session Replay included at no extra cost."),
+    ("Mobile RUM",                         1.50, 5, "#20BF6B", "End-to-end mobile monitoring for iOS and Android. Crash reporting, ANR tracking, and mobile-specific session replay."),
     # Platform
-    ("Incident Management",                 25.00, 6, "https://picsum.photos/seed/dd17/400/300", "Streamline on-call, incident declaration, and postmortem workflows. Integrates with PagerDuty and Slack."),
-    ("CI Visibility",                       20.00, 6, "https://picsum.photos/seed/dd18/400/300", "Monitor CI/CD pipeline performance, flaky test detection, and test impact analysis across every branch."),
+    ("Incident Management",                0.00, 6, "#4B7BEC", "Declare, manage, and resolve incidents from a single pane. Integrates with PagerDuty, Slack, Jira, and 40+ tools."),
+    ("CI Visibility",                     20.00, 6, "#3867D6", "Pipeline analytics, flaky test detection, and test impact analysis. See which commits broke the build and why."),
 ]
 
 USERS = [
@@ -63,12 +65,12 @@ def seed():
         cat_list = list(cats.values())
 
         products = []
-        for name, price, cat_idx, img, desc in PRODUCTS:
+        for name, price, cat_idx, color, desc in PRODUCTS:
             p = Product(
                 name=name,
                 price=price,
                 category_id=cat_list[cat_idx - 1].id,
-                image_url=img,
+                image_url=color,
                 description=desc,
                 stock=random.randint(5, 999),
             )
