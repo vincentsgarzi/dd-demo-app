@@ -26,6 +26,7 @@ export DD_RUNTIME_METRICS_ENABLED=true
 export DD_PROFILING_ENABLED=true
 export DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED=true
 export DD_DBM_PROPAGATION_MODE=full
+export DD_APPSEC_ENABLED=true
 
 # Seed DB (DD_TRACE_ENABLED=false prevents seed from sending traces as wrong service)
 echo "  Seeding database..."

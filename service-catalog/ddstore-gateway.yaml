@@ -1,0 +1,39 @@
+schema-version: v2.2
+dd-service: ddstore-gateway
+team: dd-store-platform
+contacts:
+  - name: Platform Team
+    type: slack
+    contact: "#ddstore-platform"
+  - name: Vincent Sgarzi
+    type: email
+    contact: vincent.sgarzi@datadoghq.com
+repos:
+  - name: dd-demo-app
+    provider: github
+    url: https://github.com/vincentsgarzi/dd-demo-app
+links:
+  - name: Runbook
+    type: runbook
+    url: https://wiki.internal/ddstore/gateway-runbook
+  - name: Architecture Diagram
+    type: doc
+    url: https://wiki.internal/ddstore/architecture
+  - name: On-Call Schedule
+    type: other
+    url: https://app.datadoghq.com/on-call
+tags:
+  - tier:1
+  - component:gateway
+  - language:python
+  - framework:flask
+description: >
+  API Gateway for DD Store. Thin reverse proxy that routes frontend
+  requests to downstream microservices (products, orders, analytics).
+  Entry point for all client traffic. Handles CORS and distributed
+  trace propagation.
+application: ddstore
+lifecycle: production
+type: web
+languages:
+  - python

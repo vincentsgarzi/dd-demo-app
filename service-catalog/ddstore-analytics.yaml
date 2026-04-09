@@ -1,0 +1,40 @@
+schema-version: v2.2
+dd-service: ddstore-analytics
+team: dd-store-data
+contacts:
+  - name: Data Engineering
+    type: slack
+    contact: "#ddstore-data-eng"
+  - name: Vincent Sgarzi
+    type: email
+    contact: vincent.sgarzi@datadoghq.com
+repos:
+  - name: dd-demo-app
+    provider: github
+    url: https://github.com/vincentsgarzi/dd-demo-app
+links:
+  - name: Runbook
+    type: runbook
+    url: https://wiki.internal/ddstore/analytics-runbook
+  - name: Memory Leak Investigation
+    type: other
+    url: https://jira.internal/DDSTORE-287
+  - name: Data Pipeline Dashboard
+    type: other
+    url: https://app.datadoghq.com/dashboard/ddstore-pipeline
+tags:
+  - tier:2
+  - component:analytics
+  - language:python
+  - framework:flask
+  - database:postgresql
+description: >
+  Analytics and stats aggregation service. Provides dashboard metrics,
+  CPU-intensive compute endpoint, and background data processing. Known
+  issues: unbounded memory leak in background worker, Python-side
+  aggregation instead of SQL, naive prime sieve CPU spikes.
+application: ddstore
+lifecycle: production
+type: web
+languages:
+  - python

@@ -1,0 +1,40 @@
+schema-version: v2.2
+dd-service: ddstore-frontend
+team: dd-store-frontend
+contacts:
+  - name: Frontend Team
+    type: slack
+    contact: "#ddstore-frontend"
+  - name: Vincent Sgarzi
+    type: email
+    contact: vincent.sgarzi@datadoghq.com
+repos:
+  - name: dd-demo-app
+    provider: github
+    url: https://github.com/vincentsgarzi/dd-demo-app
+links:
+  - name: Runbook
+    type: runbook
+    url: https://wiki.internal/ddstore/frontend-runbook
+  - name: Design System
+    type: doc
+    url: https://wiki.internal/ddstore/design-system
+  - name: RUM Dashboard
+    type: other
+    url: https://app.datadoghq.com/rum/explorer
+tags:
+  - tier:1
+  - component:frontend
+  - language:javascript
+  - framework:react
+description: >
+  React single-page application for the DD Store marketplace. Monitored
+  via Datadog RUM with Session Replay. Known issues: price feed WebSocket
+  crashes, third-party analytics long tasks, and personalization engine
+  errors.
+application: ddstore
+lifecycle: production
+type: web
+languages:
+  - javascript
+  - typescript

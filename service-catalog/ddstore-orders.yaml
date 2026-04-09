@@ -1,0 +1,41 @@
+schema-version: v2.2
+dd-service: ddstore-orders
+team: dd-store-backend
+contacts:
+  - name: Backend Team
+    type: slack
+    contact: "#ddstore-backend"
+  - name: Vincent Sgarzi
+    type: email
+    contact: vincent.sgarzi@datadoghq.com
+repos:
+  - name: dd-demo-app
+    provider: github
+    url: https://github.com/vincentsgarzi/dd-demo-app
+links:
+  - name: Runbook
+    type: runbook
+    url: https://wiki.internal/ddstore/orders-runbook
+  - name: Payment Provider Status
+    type: other
+    url: https://status.stripe.com
+  - name: Checkout Flow Diagram
+    type: doc
+    url: https://wiki.internal/ddstore/checkout-flow
+tags:
+  - tier:1
+  - component:orders
+  - language:python
+  - framework:flask
+  - database:postgresql
+  - payment:stripe
+description: >
+  Order management service. Handles shopping cart, checkout, and order
+  history. Integrates with payment gateway (simulated Stripe). Known
+  issues: payment retry storms, distributed lock contention, and missing
+  stock validation.
+application: ddstore
+lifecycle: production
+type: web
+languages:
+  - python

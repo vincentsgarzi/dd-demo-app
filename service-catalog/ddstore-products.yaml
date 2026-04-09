@@ -1,0 +1,39 @@
+schema-version: v2.2
+dd-service: ddstore-products
+team: dd-store-backend
+contacts:
+  - name: Backend Team
+    type: slack
+    contact: "#ddstore-backend"
+  - name: Vincent Sgarzi
+    type: email
+    contact: vincent.sgarzi@datadoghq.com
+repos:
+  - name: dd-demo-app
+    provider: github
+    url: https://github.com/vincentsgarzi/dd-demo-app
+links:
+  - name: Runbook
+    type: runbook
+    url: https://wiki.internal/ddstore/products-runbook
+  - name: API Docs
+    type: doc
+    url: https://wiki.internal/ddstore/products-api
+  - name: N+1 Query Known Issue
+    type: other
+    url: https://jira.internal/DDSTORE-142
+tags:
+  - tier:1
+  - component:products
+  - language:python
+  - framework:flask
+  - database:postgresql
+description: >
+  Product catalog service. Handles product listing, search, categories,
+  and recommendations. Known issues: N+1 query on catalog load, slow
+  unindexed search, and ML recommendation engine latency.
+application: ddstore
+lifecycle: production
+type: web
+languages:
+  - python
