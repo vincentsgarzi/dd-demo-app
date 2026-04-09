@@ -170,16 +170,26 @@ def stats():
             "action": "stats_fetch_orders_failed",
         })
 
-    # BUG: 7% chance of Redis cache deserialization failure
+    # BUG: 7% chance of upstream data pipeline inconsistency
     if random.random() < 0.07:
-        def _get_cached_stats(cache_key):
-            """Fetch pre-computed stats from Redis cache."""
-            def _deserialize_msgpack(raw_bytes):
-                """Deserialize msgpack-encoded stats payload."""
-                raise ValueError(f"msgpack: unpack failed — unexpected byte 0xc1 at offset 847 in cached stats (key={cache_key}, size=2.3KB, ttl=expired)")
-            _deserialize_msgpack(b"\xc1\x00")
+        def _fetch_precomputed_aggregates(pipeline_id, expected_watermark):
+            """Fetch pre-aggregated stats from analytics data pipeline."""
+            def _validate_data_freshness(actual_watermark, expected):
+                """Validate data pipeline output has not drifted beyond SLA."""
+                drift_minutes = random.randint(15, 90)
+                raise RuntimeError(
+                    f"DataPipelineStaleError: pipeline '{pipeline_id}' output is {drift_minutes}m "
+                    f"behind real-time (watermark: {expected} → actual: T-{drift_minutes}m). "
+                    f"SLA threshold: 5m. Root cause: Kafka consumer group 'stats-agg-v3' "
+                    f"has {random.randint(2, 5)} partitions stuck on offset commit. "
+                    f"Consumer lag: {random.randint(50000, 500000):,} messages across "
+                    f"{random.randint(8, 24)} partitions. "
+                    f"Last successful checkpoint: {drift_minutes}m ago. "
+                    f"Downstream dashboards serving stale data."
+                )
+            _validate_data_freshness(f"T-{random.randint(15, 90)}m", expected_watermark)
 
-        _get_cached_stats("stats:dashboard:v3")
+        _fetch_precomputed_aggregates("stats-hourly-rollup", "T-0")
 
     # ── Local DB queries (bugs preserved) ─────────────────────────────────
     total_orders = Order.query.count()

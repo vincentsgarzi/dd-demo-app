@@ -244,35 +244,85 @@ def checkout():
         span.set_tag("checkout.success", payment_success)
 
     if not payment_success:
-        # BUG: raises real exceptions so Error Tracking captures distinct issue types
-        error_classes = [
-            ("PaymentDeclinedException", "Card ending in 4242 was declined by issuing bank — insufficient funds"),
-            ("GatewayTimeoutError", "Stripe gateway did not respond within 5000ms — circuit breaker tripped"),
-            ("InsufficientFundsError", f"Account balance ${random.uniform(0, cart_total):.2f} is below required ${cart_total:.2f}"),
-            ("FraudDetectionTriggered", f"Transaction flagged by ML fraud model — risk score 0.{random.randint(85, 99)} exceeds threshold 0.80"),
-        ]
-        err_name, err_msg = random.choice(error_classes)
+        # BUG: raises realistic payment processing exceptions
+        error_scenario = random.choice(["pci", "idempotency", "fraud", "gateway"])
 
-        def _process_payment(amount, gateway="stripe"):
-            """Send payment request to payment gateway."""
-            def _validate_card(card_token):
-                """Validate card with issuing bank."""
-                raise type(err_name, (Exception,), {})(err_msg)
-            _validate_card("tok_visa_4242")
+        def _submit_to_payment_processor(order_ref, amount, email):
+            """Submit charge to payment processor via PCI-compliant tokenized flow."""
 
-        _process_payment(cart_total)  # raises with deep stack trace
+            if error_scenario == "pci":
+                def _tokenize_card(vault_id, card_hash):
+                    """Exchange card hash for single-use PCI token via Vault API."""
+                    raise ConnectionError(
+                        f"PCI Vault connection refused — vault.payments.internal:8443 "
+                        f"returned TLS handshake failure (certificate expired 2h ago). "
+                        f"Affected: all payment processing. Order ref: {order_ref}. "
+                        f"Oncall paged at 14:32 UTC. Cert auto-renewal failed — "
+                        f"ACME challenge DNS record was deleted during infra migration."
+                    )
+                _tokenize_card("vault-prod-us1", f"card_{hash(email) % 9999:04d}")
 
-    # BUG: 6% chance of database serialization conflict during high-concurrency checkout
+            elif error_scenario == "idempotency":
+                def _check_idempotency(idempotency_key, amount):
+                    """Verify this isn't a duplicate charge using idempotency store."""
+                    raise ValueError(
+                        f"IdempotencyConflict: key '{idempotency_key}' already exists "
+                        f"with amount=${amount - random.uniform(5, 50):.2f} but current request "
+                        f"has amount=${amount:.2f}. This indicates the cart was modified between "
+                        f"payment attempts. Customer: {email}. First attempt was {random.randint(2, 8)}s ago. "
+                        f"Request was rejected to prevent double-charging."
+                    )
+                _check_idempotency(f"idem_{hash(email) % 99999:05d}", amount)
+
+            elif error_scenario == "fraud":
+                def _evaluate_risk(transaction, model_version="fraud-rf-v7"):
+                    """Score transaction against real-time fraud detection model."""
+                    risk = random.uniform(0.82, 0.98)
+                    raise PermissionError(
+                        f"FraudDetection: transaction blocked — risk score {risk:.2f} exceeds "
+                        f"threshold 0.80 (model: {model_version}). "
+                        f"Signals: new email domain ({email.split('@')[1]}), "
+                        f"cart value ${amount:.2f} is {random.uniform(2, 5):.1f}x above user's "
+                        f"historical average, {random.randint(3, 7)} failed attempts in last hour. "
+                        f"Customer has been added to review queue (case #FR-{random.randint(10000, 99999)})."
+                    )
+                _evaluate_risk({"email": email, "amount": amount})
+
+            else:
+                def _charge_via_gateway(provider, amount):
+                    """Execute charge through payment gateway."""
+                    raise TimeoutError(
+                        f"Stripe API timeout after 5000ms on POST /v1/charges "
+                        f"(amount=${amount:.2f}, currency=usd). "
+                        f"Stripe status page reports degraded performance in us-east-1. "
+                        f"Circuit breaker state: OPEN (failures: 23/25 in last 60s). "
+                        f"Retry budget exhausted — 0 of 3 retries remaining."
+                    )
+                _charge_via_gateway("stripe", amount)
+
+        _submit_to_payment_processor(f"ORD-{random.randint(10000, 99999)}", cart_total, user_email)
+
+    # BUG: 6% chance of distributed lock contention during checkout
     if random.random() < 0.06:
-        def _acquire_row_lock(table, row_id):
-            """Acquire advisory lock for checkout serialization."""
-            raise Exception(f"could not serialize access due to concurrent update on table \"{table}\" row {row_id}")
+        def _reserve_inventory(items, lock_ttl_ms=5000):
+            """Acquire distributed lock on inventory rows to prevent oversell."""
+            def _acquire_redis_lock(lock_key, ttl_ms):
+                """Acquire Redlock across 3 Redis nodes for distributed consensus."""
+                product_name = random.choice([i["name"] for i in cart_items]) if cart_items else "Unknown"
+                holder = f"checkout-worker-{random.randint(1, 8)}"
+                raise TimeoutError(
+                    f"DistributedLockTimeout: failed to acquire lock '{lock_key}' "
+                    f"within {ttl_ms}ms — held by '{holder}' for {random.randint(6, 30)}s "
+                    f"(expected max hold time: 5s). Product '{product_name}' has "
+                    f"{random.randint(12, 50)} concurrent checkout attempts. "
+                    f"Redis cluster latency p99={random.randint(80, 400)}ms (normal: <10ms). "
+                    f"Lock queue depth: {random.randint(8, 25)} waiters. "
+                    f"Possible cause: Redis primary failover in progress."
+                )
+            product_id = items[0]["product_id"] if items else 0
+            _acquire_redis_lock(f"inventory:lock:product:{product_id}", lock_ttl_ms)
 
-        def _begin_checkout_transaction(session_id):
-            """Start serializable transaction for checkout atomicity."""
-            _acquire_row_lock("orders", random.randint(1, 200))
-
-        _begin_checkout_transaction(session_id)
+        _reserve_inventory(cart_items)
 
     # Create order
     user = User.query.filter_by(email=user_email).first()

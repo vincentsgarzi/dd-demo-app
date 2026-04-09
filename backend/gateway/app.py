@@ -118,15 +118,26 @@ def _proxy(service_base, path):
     the outgoing requests call, propagating trace context."""
     url = f"{service_base}{path}"
 
-    # BUG: 3% chance of request validation error on POST/PUT
+    # BUG: 3% chance of API rate limit / auth token expiry on mutations
     if request.method in ("POST", "PUT") and random.random() < 0.03:
-        def _validate_request_schema(method, path, body):
-            """Validate incoming request against OpenAPI schema."""
-            def _check_content_type(headers):
-                """Ensure Content-Type matches expected schema."""
-                raise TypeError(f"Request body validation failed: expected 'application/json; charset=utf-8' but got '{headers.get('Content-Type', 'None')}' for {method} {path}")
-            _check_content_type(request.headers)
-        _validate_request_schema(request.method, path, request.get_data())
+        def _enforce_rate_limit(client_id, endpoint, window_seconds=60):
+            """Check request against sliding window rate limiter."""
+            def _increment_counter(key, window):
+                """Atomically increment rate limit counter in Redis."""
+                current_count = random.randint(95, 150)
+                limit = 100
+                raise PermissionError(
+                    f"RateLimitExceeded: client '{client_id}' hit {current_count}/{limit} "
+                    f"requests in {window}s window on '{endpoint}'. "
+                    f"Retry-After: {random.randint(5, 30)}s. "
+                    f"Rate limit tier: 'standard' (upgrade to 'enterprise' for 10x limit). "
+                    f"Burst allowance: exhausted. "
+                    f"X-RateLimit-Remaining: 0, X-RateLimit-Reset: {int(time.time()) + random.randint(5, 30)}"
+                )
+            _increment_counter(f"ratelimit:{client_id}:{endpoint}", window_seconds)
+
+        client_id = request.headers.get("X-Session-Id", "anonymous")
+        _enforce_rate_limit(client_id, path)
     try:
         resp = http_client.request(
             method=request.method,

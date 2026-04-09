@@ -144,18 +144,46 @@ def list_products():
 @app.route("/api/products/<int:product_id>")
 def get_product(product_id):
     """
-    BUG: product IDs ending in 3 throw a deliberate unhandled ZeroDivisionError.
+    BUG: Certain product IDs trigger realistic production errors:
+    - ID ending in 3: stale cache returns a deleted product, deserialization fails
+    - ID ending in 7: feature flag evaluation crashes on missing experiment config
     """
     span = tracer.current_span()
     if span:
         span.set_tag("product.id", product_id)
 
-    # BUG: deliberate divide-by-zero when id ends in 3
+    # BUG: Stale CDN cache returns deleted/corrupted product data
     if product_id % 10 == 3:
-        logger.error(f"Cursed product ID {product_id} triggered discount calculation bug — dividing by zero", extra={
-            "product": {"id": product_id}, "bug": "ZeroDivisionError",
-        })
-        discount = 100 / (product_id - product_id)  # ZeroDivisionError
+        def _fetch_from_cache(product_id, cache_region):
+            """Fetch product from multi-tier cache (L1: local, L2: Redis, L3: CDN)."""
+            def _deserialize_product(raw_data, schema_version):
+                """Deserialize product from cache wire format."""
+                raise KeyError(
+                    f"Product {product_id} cache entry is stale — field 'pricing.base_rate' "
+                    f"was removed in schema v3.2 but CDN cache (region={cache_region}) still "
+                    f"serves schema v2.8 data. TTL override expired 47 minutes ago. "
+                    f"Cache-Control: max-age=0 header is being ignored by edge node."
+                )
+            return _deserialize_product({"id": product_id}, "v2.8")
+
+        _fetch_from_cache(product_id, random.choice(["us-east-1", "eu-west-1", "ap-south-1"]))
+
+    # BUG: Feature flag evaluation crash on A/B test products
+    if product_id % 10 == 7:
+        def _evaluate_feature_flags(product_id, user_segment):
+            """Evaluate feature flags for personalized product experience."""
+            def _resolve_experiment(experiment_id, variant_pool):
+                """Resolve which experiment variant to serve."""
+                raise RuntimeError(
+                    f"FeatureFlagEvaluationError: experiment 'pricing-tier-rollout-2024Q4' "
+                    f"references variant pool '{variant_pool}' which was archived on 2024-12-01. "
+                    f"Product {product_id} is in segment '{user_segment}' which still routes "
+                    f"to this experiment. 1,247 other products also affected. "
+                    f"Remediation: update segment rules or restore variant pool."
+                )
+            return _resolve_experiment("exp_prc_2024q4", "pool_tiered_v2")
+
+        _evaluate_feature_flags(product_id, random.choice(["enterprise", "pro", "growth"]))
 
     product = Product.query.get_or_404(product_id)
     logger.info(f"Product lookup: \"{product.name}\" (${product.price:.2f}, {product.stock} in stock)", extra={
@@ -184,18 +212,24 @@ def search_products():
         "search": {"query": q, "strategy": "LIKE_unindexed", "index_used": False},
     })
 
-    # BUG: intermittent search index corruption
+    # BUG: intermittent Elasticsearch circuit breaker trips under memory pressure
     if random.random() < 0.08:
-        def _rebuild_index(query):
-            """Attempt to rebuild corrupted search index shard."""
-            shard_id = hash(query) % 5
-            raise RuntimeError(f"Search index shard {shard_id} is corrupted — rebuild failed for query '{query}'")
+        def _query_search_cluster(query, index="products_v3"):
+            """Execute distributed search across Elasticsearch cluster."""
+            def _route_to_shard(query_hash, shard_count):
+                """Route query to primary shard based on consistent hashing."""
+                shard = query_hash % shard_count
+                raise ConnectionError(
+                    f"CircuitBreakerException: [products_v3][shard_{shard}] "
+                    f"Data too large — parent circuit breaker triggered at 89.3% heap utilization "
+                    f"(JVM heap: 28.6GB/32GB). "
+                    f"Query '{query}' requires estimated 2.1GB for aggregation buffer. "
+                    f"Other in-flight queries: 47. "
+                    f"Cluster: es-prod-west-2, node: es-data-07.internal"
+                )
+            return _route_to_shard(hash(query), 5)
 
-        def _execute_search(query):
-            """Execute search against index, falling back to rebuild on corruption."""
-            _rebuild_index(query)
-
-        _execute_search(q)  # raises SearchIndexCorruptionError with deep stack
+        _query_search_cluster(q)
 
     # BUG: artificial connection pool wait
     pool_wait = random.uniform(0.2, 0.8)
@@ -237,17 +271,23 @@ def recommendations():
 
     time.sleep(delay)
 
-    # BUG: ML model inference timeout
+    # BUG: ML model serving infrastructure failure
     if random.random() < 0.05:
-        def _load_model_weights(model_version):
-            """Load recommendation model weights from disk."""
-            raise MemoryError(f"Cannot allocate tensor for model v{model_version} — OOM during inference (requires 2.1GB, available 1.8GB)")
+        def _call_model_serving(endpoint, payload, timeout_ms=3000):
+            """Call SageMaker model endpoint for real-time inference."""
+            def _invoke_endpoint(model_id, variant):
+                """Invoke specific model variant behind traffic-splitting endpoint."""
+                raise TimeoutError(
+                    f"ModelInvocationTimeout: SageMaker endpoint 'rec-engine-prod' "
+                    f"variant '{variant}' did not respond within {timeout_ms}ms. "
+                    f"Model '{model_id}' is auto-scaling from 2→6 instances after traffic spike "
+                    f"(current RPS: 847, baseline: 120). Cold start latency ~45s per instance. "
+                    f"Fallback to pre-computed recommendations failed — Redis cache expired 12m ago. "
+                    f"Affected users: ~2,300 in the last 5 minutes."
+                )
+            return _invoke_endpoint("rec-collab-filter-v4", "variant-B-canary")
 
-        def _run_inference(product_ids):
-            """Run recommendation model inference on product embeddings."""
-            _load_model_weights("3.2.1")
-
-        _run_inference([1, 2, 3])
+        _call_model_serving("/invocations", {"product_ids": [1, 2, 3]})
 
     # BUG: inefficient — loads ALL products into memory, shuffles, slices in Python
     all_products = Product.query.all()

@@ -20,17 +20,17 @@ export default function CheckoutPage() {
       action: 'checkout_submitted',
     });
 
-    // BUG: 6% chance of email validation crash from regex backtracking
+    // BUG: 6% chance of client-side session hydration crash
     if (Math.random() < 0.06) {
-      const validateEmail = (addr) => {
-        const formatAddress = (raw) => {
-          // Simulate accessing nested config that doesn't exist
-          const rules = window.__checkoutConfig.validation.emailRules;
-          return rules.test(raw);
+      const hydrateCheckoutSession = (email) => {
+        const restorePaymentMethod = (sessionData) => {
+          // Tries to read encrypted payment token from expired session storage
+          const token = JSON.parse(sessionStorage.getItem('__dd_checkout_session'));
+          return token.payment_methods.default.encrypted_token;
         };
-        return formatAddress(addr);
+        return restorePaymentMethod({ email });
       };
-      validateEmail(email); // TypeError: Cannot read properties of undefined
+      hydrateCheckoutSession(email);
     }
 
     const start = performance.now();

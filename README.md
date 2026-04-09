@@ -95,33 +95,36 @@ The backend is split into **4 microservices** — each with its own `DD_SERVICE`
 
 ### Backend Errors
 
-| Bug | Service | Endpoint | What Datadog catches |
+| Bug | Service | Endpoint | What It Looks Like |
 |---|---|---|---|
 | N+1 query | `ddstore-products` | `GET /api/products` | APM shows N duplicate DB spans per request |
-| `NoneType` AttributeError | `ddstore-products` | `GET /api/products` | Error Tracking groups repeated exceptions |
-| `ZeroDivisionError` | `ddstore-products` | `GET /api/products/3` | Unhandled exception with full stack trace in APM |
-| Slow unindexed LIKE query | `ddstore-products` | `GET /api/search` | DBM flags full table scan, high latency in APM |
-| Search index corruption (8%) | `ddstore-products` | `GET /api/search` | RuntimeError with nested stack trace |
-| Artificial delay (1–3s) | `ddstore-products` | `GET /api/recommendations` | APM p99 latency spike, visible in service map |
-| ML model OOM (5%) | `ddstore-products` | `GET /api/recommendations` | MemoryError from model inference |
-| Payment failures (~15%) | `ddstore-orders` | `POST /api/checkout` | 4 distinct exception types with retry storm |
-| DB serialization conflict (6%) | `ddstore-orders` | `POST /api/checkout` | Concurrent update exception with stack trace |
-| No stock validation | `ddstore-orders` | `POST /api/checkout` | Oversold products (negative stock) |
-| Cache deserialization (7%) | `ddstore-analytics` | `GET /api/stats` | ValueError from corrupted msgpack cache |
+| NULL description | `ddstore-products` | `GET /api/products` | AttributeError grouped in Error Tracking |
+| Stale CDN cache | `ddstore-products` | `GET /api/products/{id}` | `KeyError` — schema v2.8 vs v3.2 mismatch, edge node ignoring cache headers |
+| Feature flag crash | `ddstore-products` | `GET /api/products/{id}` | `RuntimeError` — archived experiment variant pool, 1,247 products affected |
+| Elasticsearch circuit breaker | `ddstore-products` | `GET /api/search` | `ConnectionError` — heap at 89%, 47 in-flight queries, specific shard + node |
+| SageMaker model timeout | `ddstore-products` | `GET /api/recommendations` | `TimeoutError` — auto-scaling cold start, Redis fallback expired, 2,300 users affected |
+| Slow recommendations (1–3s) | `ddstore-products` | `GET /api/recommendations` | APM p99 latency spike, visible in service map |
+| PCI vault cert expiry | `ddstore-orders` | `POST /api/checkout` | `ConnectionError` — TLS handshake failure, cert auto-renewal broken by infra migration |
+| Idempotency conflict | `ddstore-orders` | `POST /api/checkout` | `ValueError` — cart modified between payment attempts, duplicate charge prevented |
+| Fraud detection block | `ddstore-orders` | `POST /api/checkout` | `PermissionError` — ML risk score 0.92, new email domain, case # generated |
+| Stripe API timeout | `ddstore-orders` | `POST /api/checkout` | `TimeoutError` — circuit breaker OPEN, 23/25 failures, retry budget exhausted |
+| Distributed lock contention | `ddstore-orders` | `POST /api/checkout` | `TimeoutError` — Redis lock held 15s, 25 waiters, possible primary failover |
+| No stock validation | `ddstore-orders` | `POST /api/checkout` | Oversold products — stock goes negative, logged as business error |
+| Data pipeline staleness | `ddstore-analytics` | `GET /api/stats` | `RuntimeError` — Kafka consumer lag 500K messages, stale dashboards |
 | Memory leak | `ddstore-analytics` | Background thread | Continuous Profiler heap growth over time |
 | CPU spike | `ddstore-analytics` | `GET /api/compute` | Profiler CPU flame graph, APM slow span |
 | Python-side aggregation | `ddstore-analytics` | `GET /api/stats` | Full table loaded into memory instead of SQL SUM |
-| Request validation (3%) | `ddstore-gateway` | POST/PUT requests | TypeError from schema validation |
+| Rate limit exceeded | `ddstore-gateway` | POST/PUT requests | `PermissionError` — sliding window counter, retry-after header |
 
 ### Frontend Errors (RUM Error Tracking)
 
-| Bug | Page | Trigger | Error Type |
+| Bug | Page | Trigger | What It Looks Like |
 |---|---|---|---|
-| Premium tier crash | Product detail | Product ID divisible by 5 | `Error: Cannot read properties of undefined (reading 'tier')` |
-| Long task (120ms block) | Product detail | Product ID divisible by 7 | RUM Long Task detection |
-| Pricing tier null | Home page | 4% random chance | `TypeError: pricing_tiers is undefined` |
-| Checkout config crash | Checkout | 6% random chance | `TypeError: Cannot read properties of undefined (reading 'validation')` |
-| Chart render crash | Admin dashboard | 8% after compute | `TypeError: null is not an object` |
+| Price feed WebSocket crash | Product detail | Product ID % 5 | `PriceFeedError` — malformed SSE event, schema v2.3 missing real-time fields |
+| Third-party analytics long task | Product detail | Product ID % 7 | 120ms main thread block + memory leak detected by RUM |
+| Personalization engine crash | Home page | 4% random | `TypeError` — A/B test variant config undefined for returning/high_value cohort |
+| Session hydration failure | Checkout | 6% random | `TypeError` — expired session storage, encrypted payment token is null |
+| WebGL heatmap crash | Admin dashboard | 8% after compute | `TypeError` — canvas element missing, WebGL context creation fails |
 
 ---
 

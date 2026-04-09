@@ -50,16 +50,17 @@ export default function AdminPage() {
       const result = await api.computePrimes(n);
       const elapsed = Math.round(performance.now() - start);
 
-      // BUG: 8% chance of chart rendering crash when data exceeds bounds
+      // BUG: 8% chance of dashboard WebGL rendering context crash
       if (Math.random() < 0.08) {
-        const renderChart = (data) => {
-          const scaleY = (val) => {
-            const config = document.querySelector('#perf-chart').__chartConfig;
-            return val / config.maxY; // TypeError: null is not an object
+        const renderPerformanceHeatmap = (data) => {
+          const initWebGLContext = (canvasId) => {
+            // Tries to get WebGL context from a canvas that doesn't exist
+            const gl = document.getElementById(canvasId).getContext('webgl2');
+            return gl.createBuffer();
           };
-          return scaleY(result.primes_found);
+          return initWebGLContext('perf-heatmap-canvas');
         };
-        renderChart(result);
+        renderPerformanceHeatmap(result);
       }
       setCompute(result);
       const level = elapsed > 5000 ? 'error' : elapsed > 2000 ? 'warn' : 'info';

@@ -37,10 +37,16 @@ export default function HomePage() {
           action: 'catalog_loaded',
         });
       }
-      // BUG: 4% chance of price rendering crash — product has unexpected null price
+      // BUG: 4% chance of client-side personalization engine crash
       if (data.length > 5 && Math.random() < 0.04) {
-        const broken = data[Math.floor(Math.random() * data.length)];
-        const formatted = broken.pricing_tiers.monthly.toFixed(2); // TypeError: pricing_tiers is undefined
+        const applyPersonalization = (products, userProfile) => {
+          const scoreProduct = (product, preferences) => {
+            // Tries to access A/B test variant config that doesn't exist
+            return product.personalization_config.variant_weights.score;
+          };
+          return products.map(p => ({ ...p, score: scoreProduct(p, userProfile) }));
+        };
+        applyPersonalization(data, { segment: 'returning', cohort: 'high_value' });
       }
 
       setProducts(data);

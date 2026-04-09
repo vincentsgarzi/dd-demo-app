@@ -116,22 +116,33 @@ export default function ProductPage() {
     </div>
   );
 
-  // BUG: Accessing nested property on undefined for certain products
-  // Products with id divisible by 5 have a "premium" flag but no nested data
-  // This throws a TypeError that RUM Error Tracking will capture
+  // BUG: WebSocket-based real-time price feed crashes on certain products
+  // Simulates a broken SSE/WebSocket handler for live pricing updates
   if (product.id % 5 === 0) {
+    const initPriceFeed = (productId) => {
+      const parsePriceUpdate = (eventData) => {
+        // Simulates receiving malformed SSE event from price feed
+        const update = JSON.parse(eventData);
+        return update.pricing.realtime.bid_ask_spread.toFixed(4);
+      };
+      return parsePriceUpdate('{"type":"price_update","product_id":' + productId + '}');
+    };
     try {
-      const tier = product.premium_details.tier.toUpperCase();
-      console.log('Premium tier:', tier);
+      initPriceFeed(product.id);
     } catch (e) {
-      // Intentionally re-throw to simulate an unhandled error in production
-      // RUM will capture this as a JS error
-      throw new Error(`Cannot read properties of undefined (reading 'tier') - product_id=${product.id}`);
+      throw new Error(
+        `PriceFeedError: real-time pricing WebSocket returned malformed event for ` +
+        `product_id=${product.id} ("${product.name}"). ` +
+        `Field 'pricing.realtime.bid_ask_spread' is undefined — ` +
+        `price feed schema v2.3 does not include real-time fields for this product tier. ` +
+        `${Math.floor(Math.random() * 200 + 50)} other sessions affected. ` +
+        `Fallback to cached price: $${product.price?.toFixed(2)}`
+      );
     }
   }
 
-  // BUG: Memory-heavy operation on product page causes long tasks
-  // Simulates a poorly-optimized analytics tracker
+  // BUG: Third-party analytics SDK causes long task + memory leak
+  // Simulates a heavy client-side tracking library blocking the main thread
   if (product.id % 7 === 0) {
     const start = performance.now();
     while (performance.now() - start < 120) {} // 120ms blocking → Long Task
