@@ -37,6 +37,12 @@ export default function HomePage() {
           action: 'catalog_loaded',
         });
       }
+      // BUG: 4% chance of price rendering crash — product has unexpected null price
+      if (data.length > 5 && Math.random() < 0.04) {
+        const broken = data[Math.floor(Math.random() * data.length)];
+        const formatted = broken.pricing_tiers.monthly.toFixed(2); // TypeError: pricing_tiers is undefined
+      }
+
       setProducts(data);
     } catch (err) {
       const elapsed = Math.round(performance.now() - start);

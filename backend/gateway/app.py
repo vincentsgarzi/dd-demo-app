@@ -91,6 +91,21 @@ def log_request(response):
     return response
 
 
+# ── Error handler — ensures full stack trace on the root span ─────────────
+@app.errorhandler(Exception)
+def handle_exception(e):
+    span = tracer.current_root_span()
+    if span:
+        span.set_tag("error.message", str(e))
+        span.set_tag("error.type", type(e).__name__)
+        span.set_tag("error.stack", traceback.format_exc())
+        span.error = 1
+    logger.error(f"Unhandled {type(e).__name__}: {e}", extra={
+        "error_type": type(e).__name__, "error_message": str(e),
+    })
+    return jsonify({"error": type(e).__name__, "message": str(e)}), 500
+
+
 # ── Proxy helper ──────────────────────────────────────────────────────────────
 def _forward_headers():
     """Forward relevant headers from the incoming request to the downstream service."""
@@ -127,43 +142,49 @@ def _proxy(service_base, path):
             timeout=60,
         )
 
-        # Tag the gateway span with downstream errors so APM shows full context
-        if resp.status_code >= 500:
-            span = tracer.current_span()
-            if span:
-                span.set_tag("error.message", f"Downstream {resp.status_code}: {url}")
-                try:
-                    body = resp.json()
-                    if "error" in body:
-                        span.set_tag("error.message", f"{body['error']}: {url}")
-                except Exception:
-                    pass
-                span.set_tag("error.type", "DownstreamError")
-                span.error = 1
+        # Tag BOTH current and root spans with downstream errors so APM shows full context
+        if resp.status_code >= 400:
+            error_msg = f"Downstream {resp.status_code}: {url}"
+            error_type = "DownstreamError"
+            try:
+                body = resp.json()
+                if "error" in body:
+                    error_msg = f"{body['error']}: {body.get('message', url)}"
+                    error_type = body["error"]
+            except Exception:
+                pass
+
+            for span in [tracer.current_span(), tracer.current_root_span()]:
+                if span:
+                    span.set_tag("error.message", error_msg)
+                    span.set_tag("error.type", error_type)
+                    span.error = 1
 
         return (resp.content, resp.status_code, {"Content-Type": resp.headers.get("Content-Type", "application/json")})
     except http_client.exceptions.ConnectionError as e:
-        span = tracer.current_span()
-        if span:
-            span.set_tag("error.message", f"Service unavailable: {url}")
-            span.set_tag("error.type", "ConnectionError")
-            span.set_tag("error.stack", traceback.format_exc())
-            span.error = 1
+        tb = traceback.format_exc()
+        for span in [tracer.current_span(), tracer.current_root_span()]:
+            if span:
+                span.set_tag("error.message", f"Service unavailable: {url}")
+                span.set_tag("error.type", "ConnectionError")
+                span.set_tag("error.stack", tb)
+                span.error = 1
         logger.error(f"Downstream service unavailable: {url}", extra={
             "downstream": {"url": url, "error": "ConnectionError"},
         })
-        return jsonify({"error": "Service unavailable", "target": url}), 503
+        return jsonify({"error": "ConnectionError", "message": f"Service unavailable: {url}"}), 503
     except http_client.exceptions.Timeout as e:
-        span = tracer.current_span()
-        if span:
-            span.set_tag("error.message", f"Service timeout: {url}")
-            span.set_tag("error.type", "TimeoutError")
-            span.set_tag("error.stack", traceback.format_exc())
-            span.error = 1
+        tb = traceback.format_exc()
+        for span in [tracer.current_span(), tracer.current_root_span()]:
+            if span:
+                span.set_tag("error.message", f"Service timeout: {url}")
+                span.set_tag("error.type", "TimeoutError")
+                span.set_tag("error.stack", tb)
+                span.error = 1
         logger.error(f"Downstream service timeout: {url}", extra={
             "downstream": {"url": url, "error": "Timeout"},
         })
-        return jsonify({"error": "Service timeout", "target": url}), 504
+        return jsonify({"error": "TimeoutError", "message": f"Service timeout: {url}"}), 504
 
 
 # ─────────────────────────────────────────────────────────────────────────────

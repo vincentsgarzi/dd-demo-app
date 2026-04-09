@@ -20,6 +20,19 @@ export default function CheckoutPage() {
       action: 'checkout_submitted',
     });
 
+    // BUG: 6% chance of email validation crash from regex backtracking
+    if (Math.random() < 0.06) {
+      const validateEmail = (addr) => {
+        const formatAddress = (raw) => {
+          // Simulate accessing nested config that doesn't exist
+          const rules = window.__checkoutConfig.validation.emailRules;
+          return rules.test(raw);
+        };
+        return formatAddress(addr);
+      };
+      validateEmail(email); // TypeError: Cannot read properties of undefined
+    }
+
     const start = performance.now();
     try {
       const result = await api.checkout(email);
