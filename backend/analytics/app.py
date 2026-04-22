@@ -67,6 +67,10 @@ def emit(metric, value=1, tags=None):
 
 
 # ── BUG: memory leak — background thread accumulates unbounded list ───────────
+# Safety cap: 500 entries (~5MB). The leak is fully demonstrated by then and
+# Datadog Profiler will have caught it. Without this cap the process would
+# consume ~400MB after a week of continuous demo use and get killed by macOS.
+_LEAK_HARD_CAP = 500
 _leaked_memory = []
 _worker_start_time = time.time()
 
@@ -74,6 +78,26 @@ _worker_start_time = time.time()
 def _memory_leak_worker():
     """Simulates a background job that leaks memory by never releasing data."""
     while True:
+        if len(_leaked_memory) >= _LEAK_HARD_CAP:
+            # Bug fully demonstrated — hold at cap, keep logging so Datadog
+            # continues to show the metric, but stop growing
+            leak_bytes = len(_leaked_memory) * 10_000
+            uptime_min = (time.time() - _worker_start_time) / 60
+            logger.error(
+                f"Memory leak CAPPED at {_LEAK_HARD_CAP} entries (~{leak_bytes/1024/1024:.1f}MB) — "
+                f"unbounded cache has been leaking for {uptime_min:.0f}m. "
+                f"GC cannot reclaim: all references held in module-level list.",
+                extra={
+                    "worker": {"cache_size": len(_leaked_memory), "leak_bytes": leak_bytes,
+                               "leak_mb": round(leak_bytes/1024/1024, 2), "uptime_minutes": round(uptime_min, 1),
+                               "capped": True},
+                    "action": "memory_leak_capped",
+                    "bug": "unbounded_cache",
+                },
+            )
+            time.sleep(30)
+            continue
+
         chunk = {
             "timestamp": datetime.utcnow().isoformat(),
             "payload": "x" * 10_000,
@@ -212,12 +236,24 @@ def stats():
         "action": "stats_computed",
     })
 
+    uptime_sec = time.time() - _worker_start_time
+    leak_entries = len(_leaked_memory)
+    leak_bytes = leak_entries * 10_000
+    leak_mb = round(leak_bytes / 1024 / 1024, 2)
+    # Rate: entries grow every 15s until cap
+    leak_rate_per_hour = min(leak_entries, _LEAK_HARD_CAP) / max(uptime_sec / 3600, 0.01)
+
     return jsonify({
         "total_orders": total_orders,
         "total_products": total_products,
         "total_users": total_users,
         "total_revenue": round(total_revenue, 2),
-        "memory_leak_entries": len(_leaked_memory),
+        "memory_leak_entries": leak_entries,
+        "memory_leak_mb": leak_mb,
+        "memory_leak_cap": _LEAK_HARD_CAP,
+        "memory_leak_pct": round(leak_entries / _LEAK_HARD_CAP * 100, 1),
+        "worker_uptime_seconds": round(uptime_sec),
+        "leak_rate_entries_per_hour": round(leak_rate_per_hour, 1),
     })
 
 
