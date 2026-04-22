@@ -27,17 +27,20 @@ A full-stack SaaS marketplace e-commerce app built to demo Datadog end-to-end. S
      VITE_DD_CLIENT_TOKEN=<paste your Client Token>
 
    Steps needed:
-   1. Install PostgreSQL 16 via Homebrew if not already installed, start it,
-      create the `ddstore` database and `ddstore_app` user, enable
-      pg_stat_statements in postgresql.conf, and restart Postgres.
-   2. Create the `datadog` Postgres monitoring user (pg_monitor role),
+   1. Install any missing dependencies via Homebrew: Python 3.12+, Node.js 18+,
+      and PostgreSQL 16. Skip anything already installed.
+   2. Start PostgreSQL, create the `ddstore` database and `ddstore_app` user,
+      enable pg_stat_statements in postgresql.conf, and restart Postgres.
+   3. Create the `datadog` Postgres monitoring user (pg_monitor role),
       create the datadog schema and explain_statement function, and configure
       the Agent's postgres.d/conf.yaml for DBM using
       datadog-agent-configs/postgres.yaml.example as a template.
-   3. Create backend/.env from backend/.env.example — fill in DATABASE_URL.
-   4. Create frontend/.env from frontend/.env.example — fill in my RUM credentials above.
-   5. Create the Python venv, install dependencies, and seed the database.
-   6. Run ./start.sh and confirm all 5 services are healthy.
+   4. Create backend/.env from backend/.env.example — fill in DATABASE_URL.
+   5. Create frontend/.env from frontend/.env.example — fill in my RUM credentials above.
+   6. Create the Python venv, install dependencies, and seed the database.
+   7. Install Playwright and the chromium browser for the RUM loadgen:
+      `pip install playwright && playwright install chromium`.
+   8. Run ./start.sh and confirm all 5 services are healthy.
    ```
 
    Claude will handle every step autonomously and confirm when the app is live.
@@ -46,17 +49,13 @@ A full-stack SaaS marketplace e-commerce app built to demo Datadog end-to-end. S
 
 ## Prerequisites
 
-Check these before starting. Claude can install missing items but needs to know what's there.
+You only need two things installed yourself. Everything else (Python, Node, PostgreSQL, Playwright) is auto-installed by the Quick Start command above.
 
 | Requirement | Min Version | Check | Install |
 |---|---|---|---|
 | macOS | any recent | — | — |
 | Homebrew | any | `brew --version` | `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` |
-| Python | 3.10+ | `python3 --version` | `brew install python` |
-| Node.js | 18+ | `node --version` | `brew install node` |
-| PostgreSQL | 14+ (16 recommended) | `psql --version` | `brew install postgresql@16` |
-| Datadog Agent | 7.x | `datadog-agent version` | [Agent install docs](https://docs.datadoghq.com/agent/basic_agent_usage/macos/) |
-| Playwright (for RUM loadgen) | any | `python3 -m playwright --version` | `pip install playwright && playwright install chromium` |
+| Datadog Agent | 7.x | `datadog-agent version` | [Agent install docs](https://docs.datadoghq.com/agent/basic_agent_usage/macos/) (requires your sandbox API key) |
 
 ### Datadog Sandbox Account Items
 
