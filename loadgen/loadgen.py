@@ -2,19 +2,59 @@
 Datadog Marketplace Load Generator
 Simulates realistic user traffic to generate APM traces, logs, and errors.
 Run: python3 loadgen/loadgen.py
+
+CPU-aware: monitors host CPU via psutil and backs off automatically to avoid
+impacting the SE's work machine or ruining a live demo.
 """
 import requests
 import random
 import time
 import uuid
 import sys
+import os
 
 BASE = "http://localhost:8080/api"
 USERS = ["alice@acme.com", "bob@globex.com", "carol@initech.com", "dave@umbrella.com", "eve@hooli.com"]
 SEARCH_TERMS = ["monitoring", "APM", "logs", "infrastructure", "security", "synthetics", "tracing", "profiling", "RUM", "database"]
 
+# ── CPU guard (inline — loadgen doesn't import from backend/shared) ───────────
+try:
+    import psutil
+    _PSUTIL = True
+except ImportError:
+    _PSUTIL = False
+
+_CPU_THROTTLE = 75   # % — slow down the loadgen
+_CPU_CRITICAL = 85   # % — pause the loadgen entirely for a bit
+
+
+def _host_cpu() -> float:
+    """Current host CPU %. Returns 0 if psutil unavailable."""
+    if not _PSUTIL:
+        return 0.0
+    try:
+        return psutil.cpu_percent(interval=None)   # non-blocking, uses cached value
+    except Exception:
+        return 0.0
+
+
+def _cpu_sleep(base: float) -> None:
+    """Sleep for base seconds, extended proportionally if host CPU is elevated."""
+    cpu = _host_cpu()
+    if cpu >= _CPU_CRITICAL:
+        print(f"  [cpu-guard] CRITICAL {cpu:.0f}% — pausing loadgen for 10s")
+        time.sleep(10.0)
+    elif cpu >= _CPU_THROTTLE:
+        extended = base * 2.5
+        print(f"  [cpu-guard] THROTTLE {cpu:.0f}% — extending sleep to {extended:.1f}s")
+        time.sleep(extended)
+    else:
+        time.sleep(base + random.uniform(-0.5, 1.0))
+
+
 def session_headers():
     return {"X-Session-Id": f"loadgen-{uuid.uuid4().hex[:8]}", "Content-Type": "application/json"}
+
 
 def browse_and_buy():
     """Simulates a user browsing, adding to cart, and checking out."""
@@ -28,12 +68,12 @@ def browse_and_buy():
         if not products:
             return
 
-        # View a random product detail (product ending in 3 triggers ZeroDivisionError)
+        # View a random product detail
         p = random.choice(products)
         r = requests.get(f"{BASE}/products/{p['id']}", headers=h, timeout=10)
         print(f"  [product] id={p['id']} | {r.status_code}")
 
-        # Sometimes hit the cursed product ID (ends in 3 → ZeroDivisionError)
+        # Sometimes hit the cursed product ID (ends in 3 → NULL description bug)
         if random.random() < 0.2:
             r = requests.get(f"{BASE}/products/3", headers=h, timeout=10)
             print(f"  [cursed] products/3 | {r.status_code}")
@@ -56,6 +96,7 @@ def browse_and_buy():
     except Exception as e:
         print(f"  [error] {type(e).__name__}: {e}")
 
+
 def search_traffic():
     """Simulates search queries (triggers slow unindexed LIKE queries)."""
     h = session_headers()
@@ -66,6 +107,7 @@ def search_traffic():
     except Exception as e:
         print(f"  [search error] {e}")
 
+
 def admin_traffic():
     """Occasionally hits the stats endpoint and CPU spike endpoint."""
     h = session_headers()
@@ -74,13 +116,27 @@ def admin_traffic():
         stats = r.json()
         print(f"  [admin] orders={stats.get('total_orders')} memory_leak_entries={stats.get('memory_leak_entries')}")
 
-        # Occasionally trigger CPU spike
+        # Trigger CPU spike — but only when host CPU is not already elevated.
+        # The analytics service has its own guard too, but we avoid the round-trip
+        # entirely when the machine is already hot.
+        cpu = _host_cpu()
+        if cpu >= _CPU_THROTTLE:
+            print(f"  [cpu-guard] Skipping /compute — host CPU at {cpu:.0f}%")
+            return
+
         if random.random() < 0.3:
-            n = random.choice([10000, 30000, 50000, 80000])
+            # Tighter n range than before — still causes a meaningful spike but
+            # won't peg a core for 30+ seconds
+            n = random.choice([10_000, 20_000, 30_000, 50_000])
             r = requests.get(f"{BASE}/compute", params={"n": n}, headers=h, timeout=60)
-            print(f"  [cpu] n={n} | {r.elapsed.total_seconds():.2f}s")
+            result = r.json() if r.ok else {}
+            throttled = result.get("throttled", False)
+            tag = " [throttled by guard]" if throttled else ""
+            print(f"  [cpu] n={n} | {r.elapsed.total_seconds():.2f}s{tag}")
+
     except Exception as e:
         print(f"  [admin error] {e}")
+
 
 def attack_traffic():
     """Simulates malicious requests to trigger ASM (Application Security Management).
@@ -119,14 +175,25 @@ def attack_traffic():
 
 def run():
     print("Datadog Marketplace Load Generator starting... (Ctrl+C to stop)")
-    print(f"Target: {BASE}\n")
+    print(f"Target: {BASE}")
+    if _PSUTIL:
+        print(f"CPU guard: active (throttle >{_CPU_THROTTLE}%, critical >{_CPU_CRITICAL}%)")
+    else:
+        print("CPU guard: disabled (install psutil to enable)")
+    print()
+
+    # Warm up the psutil CPU reading — first call always returns 0
+    if _PSUTIL:
+        psutil.cpu_percent(interval=1)
 
     interval = float(sys.argv[1]) if len(sys.argv) > 1 else 2.0
 
     iteration = 0
     while True:
         iteration += 1
-        print(f"\n── Iteration {iteration} ──")
+        cpu = _host_cpu()
+        cpu_tag = f" [cpu:{cpu:.0f}%]" if _PSUTIL else ""
+        print(f"\n── Iteration {iteration}{cpu_tag} ──")
 
         action = random.choices(
             ["browse", "search", "admin", "attack"],
@@ -142,7 +209,8 @@ def run():
         elif action == "attack":
             attack_traffic()
 
-        time.sleep(interval + random.uniform(-0.5, 1.0))
+        _cpu_sleep(interval)
+
 
 if __name__ == "__main__":
     try:

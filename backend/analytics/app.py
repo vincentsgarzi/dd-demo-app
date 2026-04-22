@@ -46,6 +46,7 @@ ORDER_SERVICE = os.getenv("ORDER_SERVICE_URL", "http://localhost:8082")
 
 # ── Structured logging ────────────────────────────────────────────────────────
 from shared.logging import setup_logging
+from shared import cpu_guard
 logger = setup_logging("analytics")
 
 # ── DogStatsD metrics ─────────────────────────────────────────────────────────
@@ -224,18 +225,59 @@ def stats():
 def cpu_spike():
     """
     BUG (CPU): Intentional CPU-intensive endpoint — naive prime sieve with no caching.
+    CPU guard prevents this from bricking the host; the bug still fires visibly.
     """
-    n = int(request.args.get("n", 50000))
-    n = min(n, 500_000)
+    requested_n = int(request.args.get("n", 50000))
+    host_cpu = cpu_guard.current_pct()
+    tier = cpu_guard.current_tier()
+
+    # CPU guard — cap or skip based on host load
+    n = cpu_guard.compute_cap(requested_n)
 
     span = tracer.current_span()
     if span:
-        span.set_tag("compute.n", n)
+        span.set_tag("compute.n_requested", requested_n)
+        span.set_tag("compute.n_actual", n)
+        span.set_tag("compute.cpu_pct", round(host_cpu, 1))
+        span.set_tag("compute.cpu_tier", tier)
 
-    logger.warning(f"CPU-intensive prime computation requested — n={n:,} with naive O(n*sqrt(n)) algorithm, no cache", extra={
-        "compute": {"n": n, "algorithm": "naive_trial_division", "cached": False, "max_allowed": 500_000},
-        "action": "compute_started",
-    })
+    # Critical: skip computation entirely, return a simulated result so the
+    # trace and log still show the "bug" but the host isn't further loaded
+    if n == 0:
+        logger.warning(
+            f"CPU guard CRITICAL ({host_cpu:.0f}%) — prime computation for n={requested_n:,} skipped to protect host",
+            extra={
+                "compute": {"n_requested": requested_n, "n_actual": 0, "skipped": True},
+                "cpu_guard": {"pct": host_cpu, "tier": tier},
+                "action": "compute_skipped",
+            },
+        )
+        return jsonify({
+            "primes_found": 9592,   # real answer for n=100000, so it looks plausible
+            "elapsed_ms": 0.1,
+            "throttled": True,
+            "cpu_pct": round(host_cpu, 1),
+            "note": "Result simulated — CPU guard active",
+        })
+
+    if n < requested_n:
+        logger.warning(
+            f"CPU guard THROTTLE ({host_cpu:.0f}%) — capping prime sieve from n={requested_n:,} → n={n:,}",
+            extra={
+                "compute": {"n_requested": requested_n, "n_actual": n, "capped": True},
+                "cpu_guard": {"pct": host_cpu, "tier": tier},
+                "action": "compute_capped",
+            },
+        )
+    else:
+        logger.warning(
+            f"CPU-intensive prime computation requested — n={n:,} with naive O(n*sqrt(n)) algorithm, no cache",
+            extra={
+                "compute": {"n": n, "algorithm": "naive_trial_division", "cached": False},
+                "cpu_guard": {"pct": host_cpu, "tier": tier},
+                "action": "compute_started",
+            },
+        )
 
     start = time.time()
     # BUG: naive prime check — O(n * sqrt(n)), no cache
@@ -251,12 +293,21 @@ def cpu_spike():
         span.set_tag("compute.elapsed_ms", int(elapsed * 1000))
 
     level = "error" if elapsed > 5 else "warning" if elapsed > 1 else "info"
-    getattr(logger, level)(f"Prime computation complete — found {len(primes):,} primes up to {n:,} in {elapsed*1000:.0f}ms", extra={
-        "compute": {"n": n, "primes_found": len(primes), "elapsed_ms": round(elapsed * 1000, 1), "algorithm": "naive_trial_division"},
-        "action": "compute_complete",
-    })
+    getattr(logger, level)(
+        f"Prime computation complete — found {len(primes):,} primes up to {n:,} in {elapsed*1000:.0f}ms",
+        extra={
+            "compute": {"n": n, "primes_found": len(primes), "elapsed_ms": round(elapsed * 1000, 1), "algorithm": "naive_trial_division"},
+            "cpu_guard": {"pct": host_cpu, "tier": tier},
+            "action": "compute_complete",
+        },
+    )
 
-    return jsonify({"primes_found": len(primes), "elapsed_ms": round(elapsed * 1000, 1)})
+    return jsonify({
+        "primes_found": len(primes),
+        "elapsed_ms": round(elapsed * 1000, 1),
+        "throttled": n < requested_n,
+        "cpu_pct": round(host_cpu, 1),
+    })
 
 
 if __name__ == "__main__":

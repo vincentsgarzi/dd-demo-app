@@ -94,22 +94,22 @@ echo ""
 echo "🚀 Starting microservices..."
 
 echo "  → Product Service on :8081"
-DD_SERVICE=ddstore-products ddtrace-run python3 products/app.py &
+nice -n 10 env DD_SERVICE=ddstore-products ddtrace-run python3 products/app.py &
 PRODUCTS_PID=$!
 
 echo "  → Order Service on :8082"
-DD_SERVICE=ddstore-orders ddtrace-run python3 orders/app.py &
+nice -n 10 env DD_SERVICE=ddstore-orders ddtrace-run python3 orders/app.py &
 ORDERS_PID=$!
 
 echo "  → Analytics Service on :8083"
-DD_SERVICE=ddstore-analytics ddtrace-run python3 analytics/app.py &
+nice -n 10 env DD_SERVICE=ddstore-analytics ddtrace-run python3 analytics/app.py &
 ANALYTICS_PID=$!
 
 # Give downstream services a moment to start before the gateway
 sleep 2
 
 echo "  → API Gateway on :8080"
-DD_SERVICE=ddstore-gateway ddtrace-run python3 gateway/app.py &
+nice -n 10 env DD_SERVICE=ddstore-gateway ddtrace-run python3 gateway/app.py &
 GATEWAY_PID=$!
 
 # ── Frontend ─────────────────────────────────────────────────────────────────
@@ -125,13 +125,14 @@ echo ""
 echo "📊 Starting load generator..."
 cd "$DIR"
 source backend/.venv/bin/activate
-python3 loadgen/loadgen.py 1.5 &
+nice -n 15 env python3 loadgen/loadgen.py 1.5 &
 LOADGEN_PID=$!
 echo "  Loadgen PID: $LOADGEN_PID"
 
 echo ""
 echo "🎭 Starting RUM load generator (Playwright)..."
-python3 loadgen/rum_loadgen.py --users 2 &
+# --users 2: limit to 2 concurrent browsers (down from 3) to reduce CPU pressure
+nice -n 15 env python3 loadgen/rum_loadgen.py --users 2 &
 RUM_LOADGEN_PID=$!
 echo "  RUM Loadgen PID: $RUM_LOADGEN_PID"
 
@@ -148,6 +149,10 @@ echo "   Load gen:   running (PID $LOADGEN_PID)"
 echo "   RUM gen:    running (PID $RUM_LOADGEN_PID)"
 echo ""
 echo "   Service Map: gateway → {products, orders, analytics} → postgres"
+echo ""
+echo "   CPU guard:  services nice +10, loadgens nice +15"
+echo "               /api/compute caps at 75k (throttle) or 15k (>75% CPU)"
+echo "               loadgen backs off automatically above 75% host CPU"
 echo ""
 echo "Press Ctrl+C to stop all services."
 
