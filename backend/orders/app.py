@@ -48,7 +48,7 @@ logger = setup_logging("orders")
 # ── DogStatsD metrics ─────────────────────────────────────────────────────────
 try:
     from datadog import initialize, statsd
-    initialize(statsd_host="localhost", statsd_port=8125)
+    initialize(statsd_host=os.getenv("DD_AGENT_HOST", "localhost"), statsd_port=int(os.getenv("DD_DOGSTATSD_PORT", "8125")))
     STATSD_ENABLED = True
 except Exception:
     STATSD_ENABLED = False
