@@ -49,14 +49,39 @@ function timeAgo(iso) {
   return `${Math.floor(sec / 3600)}h ago`;
 }
 
+const STAT_ICONS = {
+  orders: (
+    <svg className="w-5 h-5 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+    </svg>
+  ),
+  products: (
+    <svg className="w-5 h-5 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+    </svg>
+  ),
+  users: (
+    <svg className="w-5 h-5 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+    </svg>
+  ),
+  revenue: (
+    <svg className="w-5 h-5 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+  ),
+};
+
 // ── Stat Card ────────────────────────────────────────────────────────────────
-function StatCard({ label, value, sub, icon, gradient }) {
+function StatCard({ label, value, sub, iconKey, gradient }) {
   return (
     <div className={`relative overflow-hidden rounded-2xl p-5 ${gradient}`}>
-      <div className="text-2xl mb-3">{icon}</div>
-      <div className="text-3xl font-bold text-white mb-0.5">{value}</div>
+      <div className="mb-4 w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center">
+        {STAT_ICONS[iconKey]}
+      </div>
+      <div className="text-2xl font-bold text-white mb-0.5 tabular-nums">{value}</div>
       <div className="text-sm font-medium text-white/80">{label}</div>
-      {sub && <div className="text-xs text-white/55 mt-0.5">{sub}</div>}
+      {sub && <div className="text-xs text-white/50 mt-0.5">{sub}</div>}
     </div>
   );
 }
@@ -463,10 +488,10 @@ export default function AdminPage() {
   }, []);
 
   const statCards = stats ? [
-    { label: 'Total Orders',  value: stats.total_orders?.toLocaleString(),  sub: 'all time',             icon: '📦', gradient: 'bg-gradient-to-br from-violet-500 to-violet-700' },
-    { label: 'Products',      value: stats.total_products?.toLocaleString(), sub: 'in catalog',           icon: '🛍️', gradient: 'bg-gradient-to-br from-cyan-500 to-cyan-700' },
-    { label: 'Active Users',  value: stats.total_users?.toLocaleString(),    sub: 'registered accounts',  icon: '👤', gradient: 'bg-gradient-to-br from-amber-400 to-orange-500' },
-    { label: 'Revenue',       value: `$${stats.total_revenue?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, sub: 'completed orders only', icon: '💰', gradient: 'bg-gradient-to-br from-emerald-500 to-emerald-700' },
+    { label: 'Total Orders',  value: stats.total_orders?.toLocaleString(),  sub: 'all time',             iconKey: 'orders',   gradient: 'bg-gradient-to-br from-violet-500 to-violet-700' },
+    { label: 'Products',      value: stats.total_products?.toLocaleString(), sub: 'in catalog',           iconKey: 'products', gradient: 'bg-gradient-to-br from-sky-500 to-cyan-600' },
+    { label: 'Active Users',  value: stats.total_users?.toLocaleString(),    sub: 'registered accounts',  iconKey: 'users',    gradient: 'bg-gradient-to-br from-amber-400 to-orange-500' },
+    { label: 'Revenue',       value: `$${stats.total_revenue?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, sub: 'completed orders only', iconKey: 'revenue', gradient: 'bg-gradient-to-br from-emerald-500 to-emerald-700' },
   ] : [];
 
   return (
