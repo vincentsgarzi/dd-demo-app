@@ -19,7 +19,7 @@
 
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;
-  color-scheme: light dark;
+  color-scheme: light;   /* app is light-only — prevents dark-mode CSS vars from bleeding in on macOS */
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;

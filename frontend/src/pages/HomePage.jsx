@@ -68,14 +68,18 @@ export default function HomePage() {
   return (
     <div>
       {q ? (
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">
-          Results for "<span className="text-[#632ca6]">{q}</span>"
-          <span className="text-base font-normal text-gray-500 ml-2">({products.length} found)</span>
-        </h1>
+        /* div not h1 — global CSS sets h1 to 56px + near-white color in dark color-scheme */
+        <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#111827', marginBottom: '1.5rem' }}>
+          Results for "<span style={{ color: '#632ca6' }}>{q}</span>"
+          <span style={{ fontSize: '1rem', fontWeight: 400, color: '#6b7280', marginLeft: '0.5rem' }}>({products.length} found)</span>
+        </div>
       ) : (
         <div className="mb-10">
           <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-3xl font-extrabold text-gray-900">DD Store</h1>
+            {/* div not h1 — avoids global 56px + near-white h1 style */}
+            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#111827', lineHeight: 1.2, letterSpacing: '-0.03em' }}>
+              DD Store
+            </div>
             <span className="text-xs font-medium bg-[#632ca6] text-white px-2 py-0.5 rounded-full">DEMO</span>
           </div>
           <p className="text-gray-500 text-sm">Observability products, fully monitored by Datadog.</p>
