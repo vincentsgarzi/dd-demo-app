@@ -1,183 +1,81 @@
-# Datadog Marketplace — Demo App
+# DD Store — Datadog Demo App
 
-A full-stack e-commerce app that sells Datadog products. Built specifically to demonstrate Datadog's observability platform end-to-end — the app is fully instrumented and contains deliberate bugs and performance issues to make every feature meaningful to show.
-
----
-
-## Why This Exists
-
-The dedicated Datadog demo org is great for standard demos, but it's a shared environment — you can't customize it, break things intentionally, or tailor the data story to a specific prospect.
-
-This app exists to change that.
-
-Every SE has a **sandbox account** with full admin access. This repo lets you spin up a complete, realistic demo environment inside your own sandbox — fully instrumented, fully under your control. You can:
-
-- **Customize the data** — seed products, users, and orders that match your prospect's industry
-- **Tune the bugs** — enable or disable specific issues depending on which Datadog features you're demoing
-- **Own the narrative** — because it's your sandbox, you control what the dashboards show and when
-- **Experiment freely** — break things, fix things, try new configurations without affecting anyone else
-
-The goal is a demo that feels like *their* environment, not a generic sandbox.
+A full-stack SaaS marketplace e-commerce app built to demo Datadog end-to-end. Sells fictional Datadog products (APM, RUM, DBM, etc.), runs as 4 Python Flask microservices + React frontend, and is fully instrumented with APM, RUM, DBM, Logs, Profiler, ASM, and custom metrics. Contains deliberate, realistic bugs so every Datadog feature has something interesting to show.
 
 ---
 
-## Architecture
+## Quick Start (Recommended — Let Claude Do It)
 
-```
-┌─────────────────┐
-│  React Frontend  │  (Vite :5173)
-│  DD RUM + Replay │
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│  API Gateway     │  ddstore-gateway (:8080)
-└──┬─────┬─────┬──┘
-   │     │     │
-   ▼     ▼     ▼
-┌──────┐ ┌──────┐ ┌──────────┐
-│Prod- │ │Order │ │Analytics │
-│ucts  │ │Svc   │ │Service   │
-│:8081 │ │:8082 │ │:8083     │
-└──┬───┘ └──┬───┘ └────┬─────┘
-   │     ▲  │          │
-   │     │  │          │
-   │     └──┼──────────┘  (orders→products, analytics→orders+products)
-   │        │
-   ▼        ▼
-┌─────────────────┐
-│  PostgreSQL 16   │  (DBM enabled)
-└─────────────────┘
-```
+1. **Clone the repo**
+   ```bash
+   git clone https://github.com/vincentsgarzi/dd-demo-app.git
+   cd dd-demo-app
+   ```
 
-The backend is split into **4 microservices** — each with its own `DD_SERVICE` tag, creating a rich service map with distributed traces that cross service boundaries.
+2. **Get your RUM credentials** from your Datadog sandbox:
+   - Go to **Digital Experience → RUM → New Application**
+   - Select **React**, name it `ddstore`, click **Create**
+   - Copy the `applicationId` and `clientToken` from the snippet
 
-| Service | Port | DD_SERVICE | Responsibility |
-|---------|------|------------|----------------|
-| **API Gateway** | 8080 | `ddstore-gateway` | Routes all requests to downstream services |
-| **Product Service** | 8081 | `ddstore-products` | Products, categories, search, recommendations |
-| **Order Service** | 8082 | `ddstore-orders` | Cart, checkout, order history |
-| **Analytics Service** | 8083 | `ddstore-analytics` | Stats dashboard, compute, memory leak worker |
+3. **Open in [Claude Code](https://claude.ai/download)** and paste this prompt:
 
-**Cross-service calls** (visible as multi-service flamegraphs in APM):
-- Checkout: `orders → products` (validates each cart item)
-- Stats: `analytics → orders + products` (aggregates data across services)
+   ```
+   I just cloned the dd-demo-app repo. Please set it up end-to-end on my machine.
 
----
+   My RUM credentials:
+     VITE_DD_APP_ID=<paste your App ID>
+     VITE_DD_CLIENT_TOKEN=<paste your Client Token>
 
-## What's Inside
+   Steps needed:
+   1. Install PostgreSQL 16 via Homebrew if not already installed, start it,
+      create the `ddstore` database and `ddstore_app` user, enable
+      pg_stat_statements in postgresql.conf, and restart Postgres.
+   2. Create the `datadog` Postgres monitoring user (pg_monitor role),
+      create the datadog schema and explain_statement function, and configure
+      the Agent's postgres.d/conf.yaml for DBM using
+      datadog-agent-configs/postgres.yaml.example as a template.
+   3. Create backend/.env from backend/.env.example — fill in DATABASE_URL.
+   4. Create frontend/.env from frontend/.env.example — fill in my RUM credentials above.
+   5. Create the Python venv, install dependencies, and seed the database.
+   6. Run ./start.sh and confirm all 5 services are healthy.
+   ```
 
-| Layer | Tech |
-|---|---|
-| Frontend | React + Vite + Tailwind CSS |
-| Backend | 4 Python Flask microservices + SQLAlchemy |
-| Database | PostgreSQL (shared, DBM enabled) |
-| APM | ddtrace (auto-instrumented across all services) |
-| RUM | @datadog/browser-rum + React plugin |
-| Logs | Structured JSON logs + browser-logs |
-| Metrics | DogStatsD custom metrics |
-| Profiling | DD Continuous Profiler (enabled via env) |
-
----
-
-## Datadog Features Demonstrated
-
-- **APM & Distributed Tracing** — every request traced across multiple services; service map shows gateway → {products, orders, analytics} → postgres
-- **Database Monitoring** — slow queries, explain plans, `pg_stat_statements` enabled, APM↔DBM correlation
-- **RUM + Session Replay** — 100% session capture, React component tracking, frontend errors
-- **Log Management** — structured JSON logs correlated to traces via `dd.trace_id`
-- **Error Tracking** — backend exceptions + frontend JS errors grouped automatically, attributed to the correct service
-- **Continuous Profiler** — CPU and memory profiles from each Flask process
-- **Custom Metrics** — `ddstore.*` namespace via DogStatsD (request count, revenue, errors)
-
----
-
-## Intentional Bugs (for demo)
-
-### Backend Errors
-
-| Bug | Service | Endpoint | What It Looks Like |
-|---|---|---|---|
-| N+1 query | `ddstore-products` | `GET /api/products` | APM shows N duplicate DB spans per request |
-| NULL description | `ddstore-products` | `GET /api/products` | AttributeError grouped in Error Tracking |
-| Stale CDN cache | `ddstore-products` | `GET /api/products/{id}` | `KeyError` — schema v2.8 vs v3.2 mismatch, edge node ignoring cache headers |
-| Feature flag crash | `ddstore-products` | `GET /api/products/{id}` | `RuntimeError` — archived experiment variant pool, 1,247 products affected |
-| Elasticsearch circuit breaker | `ddstore-products` | `GET /api/search` | `ConnectionError` — heap at 89%, 47 in-flight queries, specific shard + node |
-| SageMaker model timeout | `ddstore-products` | `GET /api/recommendations` | `TimeoutError` — auto-scaling cold start, Redis fallback expired, 2,300 users affected |
-| Slow recommendations (1–3s) | `ddstore-products` | `GET /api/recommendations` | APM p99 latency spike, visible in service map |
-| PCI vault cert expiry | `ddstore-orders` | `POST /api/checkout` | `ConnectionError` — TLS handshake failure, cert auto-renewal broken by infra migration |
-| Idempotency conflict | `ddstore-orders` | `POST /api/checkout` | `ValueError` — cart modified between payment attempts, duplicate charge prevented |
-| Fraud detection block | `ddstore-orders` | `POST /api/checkout` | `PermissionError` — ML risk score 0.92, new email domain, case # generated |
-| Stripe API timeout | `ddstore-orders` | `POST /api/checkout` | `TimeoutError` — circuit breaker OPEN, 23/25 failures, retry budget exhausted |
-| Distributed lock contention | `ddstore-orders` | `POST /api/checkout` | `TimeoutError` — Redis lock held 15s, 25 waiters, possible primary failover |
-| No stock validation | `ddstore-orders` | `POST /api/checkout` | Oversold products — stock goes negative, logged as business error |
-| Data pipeline staleness | `ddstore-analytics` | `GET /api/stats` | `RuntimeError` — Kafka consumer lag 500K messages, stale dashboards |
-| Memory leak | `ddstore-analytics` | Background thread | Continuous Profiler heap growth over time |
-| CPU spike | `ddstore-analytics` | `GET /api/compute` | Profiler CPU flame graph, APM slow span |
-| Python-side aggregation | `ddstore-analytics` | `GET /api/stats` | Full table loaded into memory instead of SQL SUM |
-| Rate limit exceeded | `ddstore-gateway` | POST/PUT requests | `PermissionError` — sliding window counter, retry-after header |
-
-### Frontend Errors (RUM Error Tracking)
-
-| Bug | Page | Trigger | What It Looks Like |
-|---|---|---|---|
-| Price feed WebSocket crash | Product detail | Product ID % 5 | `PriceFeedError` — malformed SSE event, schema v2.3 missing real-time fields |
-| Third-party analytics long task | Product detail | Product ID % 7 | 120ms main thread block + memory leak detected by RUM |
-| Personalization engine crash | Home page | 4% random | `TypeError` — A/B test variant config undefined for returning/high_value cohort |
-| Session hydration failure | Checkout | 6% random | `TypeError` — expired session storage, encrypted payment token is null |
-| WebGL heatmap crash | Admin dashboard | 8% after compute | `TypeError` — canvas element missing, WebGL context creation fails |
+   Claude will handle every step autonomously and confirm when the app is live.
 
 ---
 
 ## Prerequisites
 
-You need these installed before starting:
+Check these before starting. Claude can install missing items but needs to know what's there.
 
-| Requirement | Check | Install |
+| Requirement | Min Version | Check | Install |
+|---|---|---|---|
+| macOS | any recent | — | — |
+| Homebrew | any | `brew --version` | `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` |
+| Python | 3.10+ | `python3 --version` | `brew install python` |
+| Node.js | 18+ | `node --version` | `brew install node` |
+| PostgreSQL | 14+ (16 recommended) | `psql --version` | `brew install postgresql@16` |
+| Datadog Agent | 7.x | `datadog-agent version` | [Agent install docs](https://docs.datadoghq.com/agent/basic_agent_usage/macos/) |
+| Playwright (for RUM loadgen) | any | `python3 -m playwright --version` | `pip install playwright && playwright install chromium` |
+
+### Datadog Sandbox Account Items
+
+You need two things from your **own** Datadog sandbox account (not the shared demo org):
+
+| Item | Where to Find It | Used For |
 |---|---|---|
-| **macOS with Homebrew** | `brew --version` | [brew.sh](https://brew.sh) |
-| **Python 3.10+** | `python3 --version` | `brew install python` |
-| **Node.js 18+** | `node --version` | `brew install node` |
-| **Datadog Agent** | `datadog-agent status` | [Install docs](https://docs.datadoghq.com/agent/) |
+| **Agent API Key** | Organization Settings → API Keys | Datadog Agent config (`/opt/datadog-agent/etc/datadog.yaml`) |
+| **RUM App ID + Client Token** | Digital Experience → RUM → New Application → React → `ddstore` | `frontend/.env` |
 
-You also need from your **Datadog sandbox account** (must be grabbed manually from the UI):
-
-1. **Datadog API Key** — for the Agent ([Organization Settings > API Keys](https://app.datadoghq.com/organization-settings/api-keys))
-2. **RUM Application ID + Client Token** — for frontend monitoring
-   - Go to **Digital Experience > RUM > New Application**
-   - Select **React**, name it `ddstore`, click **Create**
-   - Copy the `applicationId` and `clientToken` from the snippet shown
+> **Note:** The Agent API key should already be in `/opt/datadog-agent/etc/datadog.yaml` if your Agent is running. You only need to create the RUM application.
 
 ---
 
-## Setup
+## Manual Setup (Step-by-Step)
 
-### Option A: Spin up with Claude (recommended)
+Skip this if you're using the Claude Quick Start above.
 
-Clone the repo, open it in [Claude Code](https://claude.com/claude-code), and paste this prompt:
-
-```
-I just cloned the dd-demo-app repo. Please set it up end-to-end on my machine:
-
-1. Install PostgreSQL via Homebrew if not already installed, start it, and create
-   the ddstore database and ddstore_app user with pg_stat_statements enabled
-2. Create a 'datadog' PostgreSQL monitoring user with pg_monitor role, create the
-   datadog.explain_statement function, and configure the Agent's postgres.d/conf.yaml
-   for DBM (use datadog-agent-configs/postgres.yaml.example as a reference)
-3. Create backend/.env from backend/.env.example — fill in the DATABASE_URL
-4. Create frontend/.env from frontend/.env.example — I'll give you my RUM credentials:
-     VITE_DD_APP_ID=<paste your App ID here>
-     VITE_DD_CLIENT_TOKEN=<paste your Client Token here>
-5. Set up the Python virtualenv, install dependencies, and seed the database
-6. Start the app (./start.sh) and confirm all services are healthy
-```
-
-Claude will handle every step, ask if anything is unclear, and confirm when the app is live.
-
----
-
-### Option B: Manual setup
-
-#### 1. Install and configure PostgreSQL
+### 1. PostgreSQL
 
 ```bash
 brew install postgresql@16
@@ -186,34 +84,34 @@ brew services start postgresql@16
 
 Create the database and app user:
 
-```sql
--- Run with: psql postgres
+```bash
+psql postgres <<'SQL'
 CREATE DATABASE ddstore;
 CREATE USER ddstore_app WITH PASSWORD 'ddstore123';
 GRANT ALL PRIVILEGES ON DATABASE ddstore TO ddstore_app;
 ALTER DATABASE ddstore OWNER TO ddstore_app;
+SQL
 ```
 
-Enable `pg_stat_statements` for DBM:
+Enable `pg_stat_statements` (required for DBM):
 
 ```bash
-# Find your postgresql.conf:
+# Find your config file:
 psql postgres -c "SHOW config_file;"
 
-# Add/edit these lines in postgresql.conf:
+# Add these lines to postgresql.conf:
 #   shared_preload_libraries = 'pg_stat_statements'
 #   track_activity_query_size = 4096
 
-# Restart PostgreSQL for changes to take effect:
 brew services restart postgresql@16
 ```
 
-#### 2. Set up Database Monitoring (DBM)
+### 2. Database Monitoring (DBM) Setup
 
-Create the Datadog monitoring user and explain plan function:
+Run as a superuser on the `ddstore` database:
 
-```sql
--- Run with: psql ddstore
+```bash
+psql ddstore <<'SQL'
 CREATE USER datadog WITH PASSWORD 'datadog123';
 GRANT pg_monitor TO datadog;
 GRANT SELECT ON pg_stat_activity TO datadog;
@@ -232,68 +130,173 @@ BEGIN
 END; $$ LANGUAGE 'plpgsql' RETURNS NULL ON NULL INPUT SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION datadog.explain_statement(TEXT) TO datadog;
+SQL
 ```
 
-Configure the Datadog Agent's PostgreSQL integration:
+Configure the Agent:
 
 ```bash
-# Copy the example config
 cp datadog-agent-configs/postgres.yaml.example \
    /opt/datadog-agent/etc/conf.d/postgres.d/conf.yaml
 
-# Edit it — set the password you chose for the datadog user
+# Edit the file — set the password for the datadog user
 # Then restart the Agent:
 launchctl kickstart -k gui/$(id -u)/com.datadoghq.agent
 ```
 
-#### 3. Configure environment files
+### 3. Environment Files
 
 ```bash
-# Backend
+# Backend — only needs DATABASE_URL
 cp backend/.env.example backend/.env
-# Edit backend/.env — set DATABASE_URL:
-#   DATABASE_URL=postgresql://ddstore_app:ddstore123@localhost:5432/ddstore
+# Edit: DATABASE_URL=postgresql://ddstore_app:ddstore123@localhost:5432/ddstore
 
-# Frontend
+# Frontend — needs your RUM credentials
 cp frontend/.env.example frontend/.env
-# Edit frontend/.env — paste your RUM Application ID and Client Token:
-#   VITE_DD_APP_ID=your-app-id-here
-#   VITE_DD_CLIENT_TOKEN=your-client-token-here
+# Edit: VITE_DD_APP_ID and VITE_DD_CLIENT_TOKEN
 ```
 
-#### 4. Install dependencies and seed the database
+### 4. Python Dependencies + Seed Database
 
 ```bash
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python3 seed.py
+DD_TRACE_ENABLED=false python3 seed.py   # seeds 18 products, 5 users, ~30 orders
 
 cd ../frontend
 npm install
 ```
 
-#### 5. Start everything
+### 5. Start Everything
 
 ```bash
 ./start.sh
 ```
 
-This launches all 4 microservices, the frontend, and the load generator. Verify:
+### 6. Verify
 
 ```bash
-curl http://localhost:8080/api/health
-# Should show: {"status":"ok","services":{"ddstore-products":"ok","ddstore-orders":"ok","ddstore-analytics":"ok","gateway":"ok"}}
+curl http://localhost:8080/api/health    # gateway
+curl http://localhost:8081/api/health    # products
+curl http://localhost:8082/api/health    # orders
+curl http://localhost:8083/api/health    # analytics
+# frontend at http://localhost:5173
 ```
 
-To stop everything:
+Data appears in Datadog within **1–2 minutes**.
 
 ```bash
-./stop.sh
+./stop.sh    # stop all services
 ```
 
-Data will start appearing in your Datadog sandbox within 1–2 minutes.
+---
+
+## What's Running After Start
+
+| Service | URL | DD Service Tag |
+|---|---|---|
+| React frontend | http://localhost:5173 | `ddstore-frontend` |
+| API Gateway | http://localhost:8080 | `ddstore-gateway` |
+| Product Service | http://localhost:8081 | `ddstore-products` |
+| Order Service | http://localhost:8082 | `ddstore-orders` |
+| Analytics Service | http://localhost:8083 | `ddstore-analytics` |
+| Load generator | (background) | — |
+| RUM load generator (Playwright) | (background, 2 browsers) | — |
+
+### CPU Guard
+
+All services run at `nice +10`, load generators at `nice +15` — they yield CPU to your other apps automatically. The intentional CPU spike endpoint is also guarded: it caps compute at 75k (normal), 15k (>75% host CPU), or skips entirely (>85%) to protect your machine during demos.
+
+---
+
+## Datadog Features Demonstrated
+
+| Feature | What to Show |
+|---|---|
+| **APM + Distributed Tracing** | Service map: gateway → {products, orders, analytics} → postgres. Multi-service flamegraphs on checkout and stats. |
+| **Database Monitoring** | Slow queries, explain plans, N+1 query visible in DBM query samples. `DD_DBM_PROPAGATION_MODE=full` correlates APM traces → SQL queries. |
+| **RUM + Session Replay** | 100% session capture, React component tracking, frontend errors with session replay, RUM↔APM correlation. |
+| **Log Management** | Structured JSON logs from all services, correlated to APM traces via `dd.trace_id`. |
+| **Error Tracking** | 10+ distinct backend error types + 5 frontend errors, each grouped by fingerprint with full stack traces. |
+| **Continuous Profiler** | CPU flame graph from the compute endpoint. Memory heap growth from the analytics leak worker. |
+| **ASM** | Attack traffic in the loadgen fires SQL injection, XSS, Log4Shell, path traversal, SSRF payloads. |
+| **Custom Metrics** | `ddstore.*` namespace — request count, duration, revenue via DogStatsD. |
+| **Service Catalog** | 5 service YAML definitions in `service-catalog/`. Run `register.sh` with your API+App keys to push them. |
+| **NPM** | System probe config in `datadog-agent-configs/`. Limited on macOS vs Linux. |
+
+---
+
+## Architecture
+
+```
+┌─────────────────────┐
+│   React Frontend    │  Vite :5173 · Datadog RUM + Session Replay
+│   DD RUM + Replay   │  allowedTracingUrls → RUM↔APM correlation
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│    API Gateway      │  :8080 · ddstore-gateway
+│  (thin proxy/CORS)  │  Routes all /api/* to downstream services
+└───┬─────┬──────┬────┘
+    │     │      │
+    ▼     ▼      ▼
+┌──────┐ ┌──────┐ ┌────────────┐
+│Prods │ │Orders│ │ Analytics  │
+│:8081 │ │:8082 │ │ :8083      │
+│      │ │      │ │ + bg leak  │
+└──┬───┘ └──┬───┘ └─────┬──────┘
+   │    ▲   │           │
+   │    └───┘           │  (analytics calls orders + products for stats)
+   └────────────────────┘
+              │
+              ▼
+   ┌──────────────────┐
+   │  PostgreSQL 16   │  DBM enabled · pg_stat_statements · explain plans
+   └──────────────────┘
+```
+
+**Cross-service traces** (shows as multi-service flamegraph in APM):
+- `POST /api/checkout` → orders calls products to validate cart items
+- `GET /api/stats` → analytics calls both orders and products
+
+---
+
+## Intentional Bugs (Do Not Fix)
+
+These are preserved intentionally for demo purposes. All are realistic infrastructure failures — not toy errors.
+
+### Backend
+
+| Bug | Service | Trigger | Error Type |
+|---|---|---|---|
+| N+1 query | products | Every catalog load | 19 DB queries instead of 1 — visible in APM + DBM |
+| NULL description | products | Product #3 | `AttributeError` — `.upper()` on NULL field |
+| Stale CDN cache | products | Product ID % 10 == 3 | `KeyError` — schema v2.8 vs v3.2 field mismatch, edge ignoring cache headers |
+| Feature flag crash | products | Product ID % 10 == 7 | `RuntimeError` — archived variant pool, 1,247 products affected |
+| ES circuit breaker | products | 8% of requests | `ConnectionError` — heap at 89%, 47 in-flight queries |
+| SageMaker timeout | products | 5% of recommendations | `TimeoutError` — cold start, Redis fallback expired |
+| Slow recommendations | products | Always | 1–3s artificial delay — APM p99 latency spike |
+| PCI vault cert expiry | orders | ~8% of checkouts | `ConnectionError` — TLS handshake failure |
+| Idempotency conflict | orders | ~6% of checkouts | `ValueError` — duplicate payment key detected |
+| Fraud detection block | orders | ~5% of checkouts | `PermissionError` — ML risk score 0.92 |
+| Stripe timeout | orders | ~4% of checkouts | `TimeoutError` — circuit breaker OPEN |
+| Data pipeline stale | analytics | 7% of /stats | `RuntimeError` — Kafka consumer lag 500K messages |
+| Memory leak | analytics | Always (capped at 500 entries ~5MB) | Heap growth visible in Continuous Profiler |
+| CPU spike | analytics | `/api/compute` endpoint | O(n√n) prime sieve — flame graph spike |
+| Python-side aggregation | analytics | Every /stats | Full table loaded into memory instead of SQL SUM() |
+| Rate limit exceeded | gateway | 3% of POST/PUT | `PermissionError` — sliding window counter exceeded |
+
+### Frontend (RUM Error Tracking)
+
+| Bug | Page | Trigger | Error |
+|---|---|---|---|
+| Price feed crash | Product detail | Product ID % 5 == 0 | `PriceFeedError` — malformed SSE event |
+| Long task / memory | Product detail | Product ID % 7 == 0 | 120ms main thread block |
+| Personalization crash | Home page | 4% random | `TypeError` — A/B variant config undefined |
+| Session hydration fail | Checkout | 6% random | `TypeError` — encrypted payment token null |
+| WebGL context crash | Admin dashboard | 8% after compute | `TypeError` — canvas element missing |
 
 ---
 
@@ -302,32 +305,47 @@ Data will start appearing in your Datadog sandbox within 1–2 minutes.
 ```
 dd-demo-app/
 ├── backend/
-│   ├── gateway/app.py      # API Gateway — thin proxy, routes to services
-│   ├── products/app.py     # Product Service — catalog, search, recommendations
-│   ├── orders/app.py       # Order Service — cart, checkout, order history
-│   ├── analytics/app.py    # Analytics Service — stats, compute, memory leak
-│   ├── shared/models.py    # SQLAlchemy models (shared across services)
-│   ├── app.py              # Original monolith (kept for seed.py)
-│   ├── models.py           # Original models (kept for seed.py)
-│   ├── seed.py             # Database seeder
+│   ├── gateway/app.py          # API Gateway — proxies all /api/* requests
+│   ├── products/app.py         # Products, search, recommendations
+│   ├── orders/app.py           # Cart, checkout, order history
+│   ├── analytics/app.py        # Stats, CPU spike, memory leak worker
+│   ├── shared/
+│   │   ├── models.py           # SQLAlchemy models (shared)
+│   │   ├── logging.py          # setup_logging() — structured JSON
+│   │   └── cpu_guard.py        # Host CPU monitor — throttles compute, protects machine
+│   ├── seed.py                 # Seeds 18 products, 5 users, ~30 orders
 │   ├── requirements.txt
-│   ├── .env.example        # ← template, never committed
-│   └── .env                # ← your local values, gitignored
+│   ├── .env.example            # ← template, committed
+│   └── .env                    # ← your values, gitignored
 ├── frontend/
 │   ├── src/
-│   │   ├── datadog.js      # RUM + Logs init (reads from .env)
+│   │   ├── datadog.js          # RUM + Logs init (reads VITE_DD_* from .env)
 │   │   ├── App.jsx
+│   │   ├── api.js              # API client
 │   │   ├── pages/
+│   │   │   ├── HomePage.jsx
+│   │   │   ├── ProductPage.jsx
+│   │   │   ├── CartPage.jsx
+│   │   │   ├── CheckoutPage.jsx
+│   │   │   ├── OrdersPage.jsx
+│   │   │   └── AdminPage.jsx   # Admin dashboard — memory leak + CPU spike demo
 │   │   └── components/
-│   ├── .env.example        # ← template, never committed
-│   └── .env                # ← your local values, gitignored
+│   │       ├── Navbar.jsx
+│   │       ├── ProductCard.jsx
+│   │       └── ErrorBoundary.jsx
+│   ├── .env.example            # ← template, committed
+│   └── .env                    # ← your values, gitignored
 ├── loadgen/
-│   ├── loadgen.py          # Backend API traffic generator
-│   └── rum_loadgen.py      # Playwright headless browser RUM generator
+│   ├── loadgen.py              # HTTP traffic generator (browse/buy/attack, CPU-aware)
+│   └── rum_loadgen.py          # Playwright headless browser RUM sessions
+├── service-catalog/
+│   ├── ddstore-*.yaml          # Service Catalog v2.2 definitions (all 5 services)
+│   └── register.sh             # Push YAMLs to Datadog API
 ├── datadog-agent-configs/
-│   └── postgres.yaml.example  # DBM config template
-├── start.sh                # Starts all 4 microservices + frontend + loadgen
-├── stop.sh                 # Stops all running services
+│   ├── postgres.yaml.example   # DBM config template
+│   └── ddstore-logs.yaml.example # Log collection config template
+├── start.sh                    # Starts all services + loadgens (auto-detects agent ports)
+├── stop.sh                     # Kills all services by port
 └── README.md
 ```
 
@@ -335,32 +353,92 @@ dd-demo-app/
 
 ## Environment Variables
 
-### Backend (`backend/.env`)
+### `backend/.env` (only one required)
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string (shared by all services) |
-
-The following are set automatically by `start.sh` — you don't need to configure them:
-
-| Variable | Value | Description |
+| Variable | Example | Description |
 |---|---|---|
-| `DD_SERVICE` | per-service | `ddstore-gateway`, `ddstore-products`, `ddstore-orders`, `ddstore-analytics` |
-| `DD_ENV` | `demo` | Environment tag |
-| `DD_VERSION` | `1.0.0` | Version tag |
-| `DD_LOGS_INJECTION` | `true` | Injects trace IDs into log lines |
-| `DD_RUNTIME_METRICS_ENABLED` | `true` | Enables runtime metrics (GC, heap, threads) |
-| `DD_PROFILING_ENABLED` | `true` | Enables Continuous Profiler |
-| `DD_DBM_PROPAGATION_MODE` | `full` | Correlates APM traces with DBM query samples |
-| `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED` | `true` | Prevents ghost inferred services |
+| `DATABASE_URL` | `postgresql://ddstore_app:ddstore123@localhost:5432/ddstore` | Postgres connection string |
 
-### Frontend (`frontend/.env`)
+### `frontend/.env`
 
-| Variable | Description |
+| Variable | Example | Description |
+|---|---|---|
+| `VITE_DD_APP_ID` | `abc123...` | RUM Application ID (from Datadog UI) |
+| `VITE_DD_CLIENT_TOKEN` | `pub123...` | RUM Client Token (from Datadog UI) |
+| `VITE_DD_SITE` | `datadoghq.com` | Datadog site |
+| `VITE_DD_SERVICE` | `ddstore-frontend` | RUM service name |
+| `VITE_DD_ENV` | `demo` | Environment tag |
+| `VITE_DD_VERSION` | `1.0.0` | Version tag |
+
+### Set automatically by `start.sh` (no action needed)
+
+| Variable | Value |
 |---|---|
-| `VITE_DD_APP_ID` | RUM Application ID (from Datadog UI) |
-| `VITE_DD_CLIENT_TOKEN` | RUM Client Token (from Datadog UI) |
-| `VITE_DD_SITE` | Datadog site (`datadoghq.com`) |
-| `VITE_DD_SERVICE` | Frontend service name (`ddstore-frontend`) |
-| `VITE_DD_ENV` | Environment tag (`demo`) |
-| `VITE_DD_VERSION` | Version tag (`1.0.0`) |
+| `DD_ENV` | `demo` |
+| `DD_VERSION` | `1.0.0` |
+| `DD_LOGS_INJECTION` | `true` |
+| `DD_RUNTIME_METRICS_ENABLED` | `true` |
+| `DD_PROFILING_ENABLED` | `true` |
+| `DD_DBM_PROPAGATION_MODE` | `full` |
+| `DD_APPSEC_ENABLED` | `true` |
+| `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED` | `true` |
+| `DD_TRACE_AGENT_PORT` | auto-detected (8126 or 8136) |
+| `DD_DOGSTATSD_PORT` | auto-detected (8125 or 8135) |
+
+---
+
+## Service Catalog
+
+YAML definitions for all 5 services live in `service-catalog/`. To register them with Datadog:
+
+```bash
+DD_API_KEY=<your-api-key> DD_APP_KEY=<your-app-key> bash service-catalog/register.sh
+```
+
+Your App Key is in **Organization Settings → Application Keys** (different from the API key).
+
+---
+
+## Adapting for a Customer Demo
+
+The app is designed to be modified. Common customizations:
+
+| Goal | What to Change |
+|---|---|
+| Rename the app | Update `DD_SERVICE` tags in `start.sh`, `VITE_DD_SERVICE` in `frontend/.env`, and the `DD Store` title in `frontend/src/pages/HomePage.jsx` |
+| Change the product catalog | Edit `backend/seed.py` — the products array seeds the DB on every start |
+| Adjust error rates | Search for `random.random() < 0.XX` in the service files and change the threshold |
+| Enable/disable a specific bug | Comment out the relevant `if` block in the service file |
+| Add a new error scenario | Add a new `if random.random() < 0.XX: raise ErrorType(...)` block to any service endpoint |
+| Change environment name | Update `DD_ENV` in `start.sh` and `VITE_DD_ENV` in `frontend/.env` |
+
+---
+
+## Context for AI Assistants
+
+> This section is for Claude or other AI coding tools picking up a new session.
+
+**What this repo is:** A Datadog demo app used by Datadog SEs to showcase observability features in their personal sandbox accounts. It is a SaaS e-commerce store (`DD Store`) selling fictional Datadog products.
+
+**Stack:** Python 3.12 · Flask · SQLAlchemy · PostgreSQL · React 18 · Vite · Tailwind CSS · ddtrace · Playwright
+
+**Key rules:**
+1. **Always push to GitHub after every change** (`git add`, `git commit`, `git push`)
+2. **Never commit secrets** — no API keys, passwords, or tokens in any committed file
+3. **Never fix intentional bugs** — the bugs in `backend/*/app.py` and `frontend/src/pages/*.jsx` are demo features, not defects
+4. **Always use the Python venv** at `backend/.venv` for any Python commands
+5. **Start the load generator alongside the app** — `start.sh` does this automatically
+
+**Current intentional bugs are in:**
+- `backend/products/app.py` — N+1 query, NULL AttributeError, CDN KeyError, feature flag RuntimeError, ES ConnectionError, SageMaker TimeoutError
+- `backend/orders/app.py` — PCI ConnectionError, idempotency ValueError, fraud PermissionError, Stripe TimeoutError
+- `backend/analytics/app.py` — memory leak (capped at 500 entries), CPU spike (guarded by cpu_guard.py), data pipeline RuntimeError
+- `backend/gateway/app.py` — rate limit PermissionError (3% of POST/PUT)
+- `frontend/src/pages/ProductPage.jsx` — PriceFeedError, long task
+- `frontend/src/pages/HomePage.jsx` — personalization TypeError
+- `frontend/src/pages/CheckoutPage.jsx` — session hydration TypeError
+- `frontend/src/pages/AdminPage.jsx` — WebGL crash
+
+**To start the app:** `bash start.sh` from the repo root
+**To stop the app:** `bash stop.sh` from the repo root
+**Agent ports:** auto-detected by `start.sh` (handles both standard :8126 and enterprise IT :8136)
