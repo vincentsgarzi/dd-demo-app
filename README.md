@@ -71,6 +71,59 @@ You need two things from your **own** Datadog sandbox account (not the shared de
 
 ---
 
+## Datadog MCP (Claude Code Integration)
+
+Connect Claude Code to your **sandbox** Datadog account so you can ask questions like "how is my store performing?" or "show me recent errors" without leaving the editor.
+
+### Setup
+
+1. **Get your API key** — already in `/opt/datadog-agent/etc/datadog.yaml` as `api_key` if your Agent is running.
+
+2. **Get an App key** — [Organization Settings → Application Keys](https://app.datadoghq.com/organization-settings/application-keys) → New Key.
+
+3. **Run this in your terminal** (replace the keys with yours):
+
+   ```bash
+   python3 - <<'EOF'
+   import json
+
+   API_KEY = "your-api-key-here"   # from /opt/datadog-agent/etc/datadog.yaml
+   APP_KEY = "your-app-key-here"   # from Organization Settings → Application Keys
+
+   with open('/Users/YOUR_USER/.claude.json', 'r') as f:
+       data = json.load(f)
+
+   proj_key = '/path/to/this/repo'
+   data.setdefault('projects', {}).setdefault(proj_key, {})['mcpServers'] = {
+       'datadog': {
+           'type': 'stdio',
+           'command': 'npx',
+           'args': ['-y', '@winor30/mcp-server-datadog'],
+           'env': {
+               'DATADOG_API_KEY': API_KEY,
+               'DATADOG_APP_KEY': APP_KEY,
+               'DATADOG_SITE': 'datadoghq.com'
+           }
+       }
+   }
+
+   with open('/Users/YOUR_USER/.claude.json', 'w') as f:
+       json.dump(data, f, indent=2)
+
+   print('Done — restart Claude Code')
+   EOF
+   ```
+
+4. **Restart Claude Code.** The `mcp__datadog__*` tools will appear in Claude's tool list.
+
+### Why stdio instead of the HTTP MCP?
+
+The official `https://mcp.datadoghq.com` HTTP endpoint authenticates via OAuth in your browser. If your browser is logged into your Datadog **employee** account (internal eng org), the MCP will query that org instead of your sandbox — and your DDStore data won't be there. The stdio approach uses API key + App key directly, bypassing OAuth entirely.
+
+> **Note:** Never commit your API key or App key. The keys go only in `~/.claude.json` (gitignored) and stay on your local machine.
+
+---
+
 ## Manual Setup (Step-by-Step)
 
 Skip this if you're using the Claude Quick Start above.
